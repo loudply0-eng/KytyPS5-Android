@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Modified by the PS5 Game Hub project on 2026-11-24: unified application branding. -->
     <string name="app_name">PS5 Game Hub</string>
 </resources>
