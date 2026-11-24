@@ -2,6 +2,8 @@ import java.io.IOException
 import java.net.URI
 import java.security.MessageDigest
 
+// Modified by the PS5 Game Hub project on 2026-11-24: unified package identity and fail-closed production signing.
+
 plugins {
     id("com.android.application")
 }
