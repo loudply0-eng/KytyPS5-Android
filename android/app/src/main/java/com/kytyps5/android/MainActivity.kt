@@ -1,5 +1,7 @@
 package com.kytyps5.android
 
+// Modified by the PS5 Game Hub project on 2026-11-24: integrated the verified in-app updater while preserving the KytyPS5 launcher and game-library flow.
+
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
