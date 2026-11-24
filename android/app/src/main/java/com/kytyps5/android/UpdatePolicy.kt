@@ -1,5 +1,7 @@
 package com.kytyps5.android
 
+// Added by the PS5 Game Hub project on 2026-11-24 for strict release-version and HTTPS download validation.
+
 import java.net.URL
 
 internal object UpdatePolicy {
