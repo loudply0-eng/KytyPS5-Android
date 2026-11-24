@@ -1,5 +1,7 @@
 package com.kytyps5.android
 
+// Modified by the PS5 Game Hub project on 2026-11-24: integrated the verified in-app updater while preserving the KytyPS5 launcher and game-library flow.
+
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -50,6 +52,7 @@ class MainActivity : Activity() {
     private lateinit var covers: CoverLoader
     private lateinit var grid: GameGridAdapter
     private lateinit var gameSettings: GameSettingsDialog
+    private lateinit var updater: InAppUpdater
 
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
 
@@ -74,8 +77,10 @@ class MainActivity : Activity() {
             driverLabel = { drivers.gameButtonText(it.path) },
             chooseDriver = { game, done -> drivers.chooseForGame(game, done) },
         )
+        updater = InAppUpdater(this, savedInstanceState)
         setContentView(buildUi())
         applyDefaultGpuDriver()
+        updater.checkOnLaunch()
     }
 
     /** Installs the bundled Turnip on Adreno 8xx on first run (off the main thread: EGL probe + unzip). */
@@ -92,6 +97,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        updater.onResume()
         refreshStorageState()
         if (Environment.isExternalStorageManager()) {
             ensureDefaultGamesFolder()
@@ -99,6 +105,11 @@ class MainActivity : Activity() {
         } else {
             showMessage("Grant all-files access to scan for games.")
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        updater.onSaveInstanceState(outState)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
@@ -163,6 +174,7 @@ class MainActivity : Activity() {
             )
             addView(label("GPU driver", bold = true))
             addView(drivers.build(onChanged = {}))
+            addView(updater.buildPanel())
             addView(message)
             addView(
                 GridView(context).apply {

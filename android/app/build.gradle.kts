@@ -2,6 +2,8 @@ import java.io.IOException
 import java.net.URI
 import java.security.MessageDigest
 
+// Modified by the PS5 Game Hub project on 2026-11-24: unified package identity and fail-closed production signing.
+
 plugins {
     id("com.android.application")
 }
@@ -125,34 +127,65 @@ tasks.named("preBuild") {
     dependsOn(fetchBundledDrivers)
 }
 
+val validateReleaseSigning by tasks.registering {
+    group = "verification"
+    description = "Ensures the established PS5 Game Hub production signing identity is available."
+    doLast {
+        val required = listOf(
+            "ANDROID_KEYSTORE_PATH",
+            "ANDROID_KEYSTORE_PASSWORD",
+            "ANDROID_KEY_ALIAS",
+            "ANDROID_KEY_PASSWORD",
+        )
+        val missing = required.filter { System.getenv(it).isNullOrBlank() }
+        if (missing.isNotEmpty()) {
+            throw GradleException("Refusing unsigned release; missing signing values: ${missing.joinToString(", ")}")
+        }
+        val path = System.getenv("ANDROID_KEYSTORE_PATH")!!
+        if (!file(path).isFile) throw GradleException("Refusing release: production keystore file does not exist.")
+    }
+}
+
+tasks.configureEach {
+    if (name == "preReleaseBuild") dependsOn(validateReleaseSigning)
+}
+
 android {
     namespace = "com.kytyps5.android"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.kytyps5.android"
+        applicationId = "com.ps5gamehub.android"
         minSdk = 31
         targetSdk = 35
         // CI passes -PkytyVersionCode=<run number> -PkytyVersionName=<tag or 0.1.0-nightly.N> so every
         // published APK installs over the previous one.
-        versionCode = providers.gradleProperty("kytyVersionCode").getOrElse("1").toInt()
-        versionName = providers.gradleProperty("kytyVersionName").getOrElse("0.1.0")
+        versionCode = providers.gradleProperty("appVersionCode").orElse("1").get().toInt()
+        versionName = providers.gradleProperty("appVersion").orElse("0.1.0").get()
 
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
     }
 
-    // Release signing from the environment (CI secrets); without KYTY_KEYSTORE_FILE the release APK
-    // is left unsigned and local builds keep using the debug key.
-    val releaseKeystore = System.getenv("KYTY_KEYSTORE_FILE")?.takeIf { it.isNotEmpty() }?.let { file(it) }
+    // Use the same production signing identity as the existing PS5 Game Hub application.
+    // Release tasks fail closed when any signing value or the keystore file is missing.
     signingConfigs {
-        if (releaseKeystore != null) {
-            create("release") {
-                storeFile = releaseKeystore
-                storePassword = System.getenv("KYTY_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KYTY_KEY_ALIAS")
-                keyPassword = System.getenv("KYTY_KEY_PASSWORD")
+        create("release") {
+            val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            val storePasswordValue = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            val keyAliasValue = System.getenv("ANDROID_KEY_ALIAS")
+            val keyPasswordValue = System.getenv("ANDROID_KEY_PASSWORD")
+            if (!keystorePath.isNullOrBlank() &&
+                !storePasswordValue.isNullOrBlank() &&
+                !keyAliasValue.isNullOrBlank() &&
+                !keyPasswordValue.isNullOrBlank() &&
+                file(keystorePath).isFile
+            ) {
+                storeFile = file(keystorePath)
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
             }
         }
     }
@@ -160,9 +193,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            if (releaseKeystore != null) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -191,6 +222,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.core:core:1.15.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20180813")
 }
