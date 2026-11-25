@@ -395,6 +395,8 @@ class MainActivity : Activity() {
             "  Render scale  " to "  مقياس العرض  ",
             "Performance HUD" to "عرض معلومات الأداء",
             "Touch controls" to "أزرار التحكم باللمس",
+            "Max GPU clock (faster, runs hotter)" to "أقصى تردد لمعالج الرسوميات (أسرع وحرارة أعلى)",
+            "No games found here. Choose a folder containing game dumps (a folder with sce_sys/param.json, or a .zar or .exfat file)." to "لم يتم العثور على ألعاب هنا. اختر مجلداً يحتوي على ملفات لعبة، مثل مجلد يتضمن sce_sys/param.json أو ملف .zar أو .exfat.",
             "GPU driver" to "تعريف معالج الرسوميات",
             "Grant all-files access to scan for games." to "امنح صلاحية الوصول إلى كل الملفات لفحص الألعاب.",
             "Grant all-files access before scanning." to "امنح صلاحية الوصول إلى كل الملفات قبل الفحص.",
@@ -404,6 +406,10 @@ class MainActivity : Activity() {
         if (value.startsWith("Emulator library: missing")) return "مكتبة المحاكي غير موجودة (" + value.substringAfter("(")
         if (value.startsWith("Scanning ")) return "جارٍ فحص " + value.removePrefix("Scanning ").removeSuffix(" ...") + "..."
         if (value.startsWith("No games found here.")) return "لم يتم العثور على ألعاب في هذا المجلد. اختر مجلداً يحتوي على ملفات الألعاب."
+        if (value.endsWith(" game(s) found. Tap to play, ⚙ or long-press for game settings.")) {
+            val count = value.substringBefore(" game(s)").toIntOrNull() ?: 0
+            return "تم العثور على $count لعبة. اضغط للتشغيل أو اضغط مطولاً لفتح إعدادات اللعبة."
+        }
         if (value.startsWith("Pick a folder on device storage")) return "اختر مجلداً من ذاكرة الجهاز أو بطاقة SD؛ المجلدات السحابية غير مدعومة."
         if (value.startsWith("Could not create ")) return "تعذر إنشاء " + value.removePrefix("Could not create ")
         return value
