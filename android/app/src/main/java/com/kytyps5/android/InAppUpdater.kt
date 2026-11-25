@@ -131,7 +131,9 @@ internal class InAppUpdater(
     }
 
     private fun checkForUpdates(automatic: Boolean = false) {
-        LauncherSettings(activity).lastAutoUpdateAttemptAtMillis = System.currentTimeMillis()
+        if (automatic) {
+            LauncherSettings(activity).lastAutoUpdateAttemptAtMillis = System.currentTimeMillis()
+        }
         setBusy(true, "Checking the latest stable release…")
         thread {
             try {
@@ -145,8 +147,10 @@ internal class InAppUpdater(
                 val currentVersion = UpdatePolicy.parseVersion(installedVersionName())
                     ?: throw IllegalStateException("Installed app version is invalid.")
                 if (UpdatePolicy.compareVersions(latestVersion, currentVersion) <= 0) {
-                    // A valid stable release was checked and no newer version exists.
-                    LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
+                    // Only automatic checks update the automatic-check success schedule.
+                    if (automatic) {
+                        LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
+                    }
                     activity.runOnUiThread {
                         setBusy(false, "You are using the latest version (${installedVersionName()}).")
                     }
