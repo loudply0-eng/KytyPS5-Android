@@ -45,6 +45,7 @@ internal class InAppUpdater(
     private fun localizeStatus(value: String): String {
         val translations = mapOf(
             "APP UPDATES" to "تحديثات التطبيق",
+            "Downloading update…" to "جارٍ تنزيل التحديث…",
             "Check for updates" to "التحقق من التحديثات",
             "Checking the latest stable release…" to "جارٍ التحقق من أحدث إصدار مستقر…",
             "You are using the latest version" to "أنت تستخدم أحدث إصدار",
@@ -92,7 +93,7 @@ internal class InAppUpdater(
         }
         panel.addView(updateButton)
         panel.addView(TextView(activity).apply {
-            text = "Stable updates are checked from the official project releases. Downloads are verified before Android's installer opens; Android requires your approval to install."
+            text = ui("Stable updates are checked from the official project releases. Downloads are verified before the Android installer opens; your approval is required to install.", "يتم التحقق من التحديثات المستقرة عبر الإصدارات الرسمية للمشروع. يُفحص الملف قبل فتح مُثبّت أندرويد، وتبقى موافقتك مطلوبة لإكمال التثبيت.")
             textSize = 12f
             setTextColor(Color.LTGRAY)
             alpha = 0.75f
@@ -160,8 +161,7 @@ internal class InAppUpdater(
                     AlertDialog.Builder(activity)
                         .setTitle(ui("Update available — $tag", "يتوفر تحديث — $tag"))
                         .setMessage(
-                            "Current version: ${installedVersionName()}\nNew version: $tag\n\n$notes\n\n" +
-                                "The APK will be downloaded and checked before Android's installer opens."
+                            ui("Current version: ${installedVersionName()}\nNew version: $tag\n\n$notes\n\nThe APK will be downloaded and checked before the Android installer opens.", "الإصدار الحالي: ${installedVersionName()}\nالإصدار الجديد: $tag\n\n$notes\n\nسيتم تنزيل ملف التطبيق والتحقق منه قبل فتح مُثبّت أندرويد.")
                         )
                         .setNegativeButton(ui("Later", "لاحقاً"), null)
                         .setPositiveButton(ui("Download and install", "تنزيل وتثبيت")) { _, _ ->
