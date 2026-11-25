@@ -9,7 +9,7 @@ import java.net.URL
 class UpdatePolicyTest {
     @Test
     fun throttlesAutomaticChecksButAllowsRetryAfterCooldown() {
-        val now = 1_000_000L
+        val now = 10L * UpdatePolicy.AUTO_UPDATE_CHECK_INTERVAL_MILLIS
         assertEquals(true, UpdatePolicy.shouldRunAutomaticCheck(0L, 0L, now))
         assertEquals(false, UpdatePolicy.shouldRunAutomaticCheck(
             now - UpdatePolicy.AUTO_UPDATE_CHECK_INTERVAL_MILLIS + 1L, 0L, now

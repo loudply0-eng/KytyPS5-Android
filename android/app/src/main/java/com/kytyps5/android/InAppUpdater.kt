@@ -144,8 +144,9 @@ internal class InAppUpdater(
                     ?: throw IllegalStateException("Release tag is not a valid stable version: $tag")
                 val currentVersion = UpdatePolicy.parseVersion(installedVersionName())
                     ?: throw IllegalStateException("Installed app version is invalid.")
-                LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
                 if (UpdatePolicy.compareVersions(latestVersion, currentVersion) <= 0) {
+                    // A valid stable release was checked and no newer version exists.
+                    LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
                     activity.runOnUiThread {
                         setBusy(false, "You are using the latest version (${installedVersionName()}).")
                     }
@@ -170,6 +171,8 @@ internal class InAppUpdater(
                     throw SecurityException("APK URL is not an approved HTTPS GitHub release URL.")
                 }
                 val notes = release.optString("body").take(2500)
+                // Record success only after the newer release and its download metadata pass validation.
+                LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
                 activity.runOnUiThread {
                     setBusy(false, "Update available: $tag")
                     AlertDialog.Builder(activity)
