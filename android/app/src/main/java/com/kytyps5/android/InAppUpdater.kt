@@ -168,7 +168,7 @@ internal class InAppUpdater(
                 }
                 val downloadUrl = asset.optString("browser_download_url")
                 if (UpdatePolicy.trustedDownloadUrl(downloadUrl)?.host != "github.com") {
-                    throw SecurityException("APK URL is not an approved HTTPS GitHub release URL.")
+                    throw SecurityException("APK URL is not an approved secure release URL.")
                 }
                 val notes = release.optString("body").take(2500)
                 if (automatic) {
@@ -322,7 +322,7 @@ internal class InAppUpdater(
 
     private fun openVerifiedDownloadConnection(address: String): HttpURLConnection {
         var current = UpdatePolicy.trustedDownloadUrl(address)
-            ?: throw SecurityException("APK URL is not on the HTTPS GitHub allowlist.")
+            ?: throw SecurityException("APK URL is not on the trusted secure-download list.")
         repeat(MAX_REDIRECTS + 1) { hop ->
             val connection = (current.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -345,7 +345,7 @@ internal class InAppUpdater(
                     throw SecurityException("APK download exceeded the redirect limit or omitted Location.")
                 }
                 current = UpdatePolicy.resolveTrustedRedirect(current, location)
-                    ?: throw SecurityException("APK redirect is not on the HTTPS GitHub allowlist.")
+                    ?: throw SecurityException("APK redirect is not on the trusted secure-download list.")
             } else {
                 if (response !in 200..299) {
                     connection.disconnect()
@@ -382,7 +382,7 @@ internal class InAppUpdater(
         if (requested.protocol != "https" || requested.host != "api.github.com" ||
             requested.userInfo != null || requested.port !in setOf(-1, 443)
         ) {
-            throw SecurityException("Update metadata URL is not the official GitHub API host.")
+            throw SecurityException("Update service address is not trusted.")
         }
         val connection = (requested.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -398,7 +398,7 @@ internal class InAppUpdater(
                 throw IllegalStateException("No official app release has been published yet.")
             }
             if (response !in 200..299) {
-                throw IllegalStateException("GitHub API returned HTTP $response.")
+                throw IllegalStateException("Update service returned HTTP $response.")
             }
             val body = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream()
@@ -409,7 +409,7 @@ internal class InAppUpdater(
                     if (count < 0) break
                     total += count
                     if (total > 2 * 1024 * 1024) {
-                        throw IllegalStateException("GitHub release metadata exceeds the size limit.")
+                        throw IllegalStateException("Update metadata exceeds the size limit.")
                     }
                     output.write(buffer, 0, count)
                 }
