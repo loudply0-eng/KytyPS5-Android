@@ -8,6 +8,18 @@ class LauncherSettings(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    var autoUpdatesEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_UPDATES, true)
+        set(value) { prefs.edit().putBoolean(KEY_AUTO_UPDATES, value).apply() }
+
+    var language: String
+        get() = prefs.getString(KEY_LANGUAGE, "en")?.takeIf { it == "ar" || it == "en" } ?: "en"
+        set(value) { prefs.edit().putString(KEY_LANGUAGE, if (value == "ar") "ar" else "en").apply() }
+
+    var accentColor: Int
+        get() = prefs.getInt(KEY_ACCENT_COLOR, DEFAULT_ACCENT_COLOR)
+        set(value) { prefs.edit().putInt(KEY_ACCENT_COLOR, value).apply() }
+
     var gamesRoot: String
         get() = prefs.getString(KEY_GAMES_ROOT, DEFAULT_GAMES_ROOT) ?: DEFAULT_GAMES_ROOT
         set(value) {
@@ -95,6 +107,10 @@ class LauncherSettings(context: Context) {
         const val DEFAULT_GPU_TURBO = true
         private const val PREFS_NAME = "kytyps5_launcher"
         private const val KEY_GAMES_ROOT = "games_root"
+        private const val KEY_AUTO_UPDATES = "auto_updates_enabled"
+        private const val KEY_LANGUAGE = "interface_language"
+        private const val KEY_ACCENT_COLOR = "interface_accent_color"
+        const val DEFAULT_ACCENT_COLOR = 0xFF1976D2.toInt()
         private const val KEY_RESOLUTION = "resolution"
         private const val KEY_RENDER_SCALE = "render_scale"
         private const val KEY_GPU_DRIVER = "gpu_driver"
