@@ -139,7 +139,12 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16.dp, 16.dp, 16.dp, 16.dp)
-            addView(label("KytyPS5", sizeSp = 22f, bold = true))
+            addView(label("PS5 Game Hub", sizeSp = 22f, bold = true))
+            addView(Button(context).apply {
+                text = if (settings.language == "ar") "الإعدادات" else "Settings"
+                backgroundTintList = android.content.res.ColorStateList.valueOf(settings.accentColor)
+                setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+            })
             addView(nativeStatus)
             addView(storageStatus)
             addView(grantButton)
@@ -174,7 +179,6 @@ class MainActivity : Activity() {
             )
             addView(label("GPU driver", bold = true))
             addView(drivers.build(onChanged = {}))
-            addView(updater.buildPanel())
             addView(message)
             addView(
                 GridView(context).apply {
