@@ -229,8 +229,7 @@ internal class InAppUpdater(
                         AlertDialog.Builder(activity)
                             .setTitle(ui("Allow app updates", "السماح بتحديث التطبيق"))
                             .setMessage(
-                                "Android needs permission to install updates initiated by this app. " +
-                                    "Enable it on the next screen, then return here."
+                                ui("Android needs permission to install updates initiated by this app. Enable it on the next screen, then return here.", "يحتاج أندرويد إلى إذن لتثبيت التحديثات التي يبدأها هذا التطبيق. فعّل الإذن في الشاشة التالية ثم ارجع إلى هنا.")
                             )
                             .setPositiveButton(ui("Open settings", "فتح الإعدادات")) { _, _ ->
                                 activity.startActivity(
