@@ -8,6 +8,22 @@ import java.net.URL
 
 class UpdatePolicyTest {
     @Test
+    fun throttlesAutomaticChecksButAllowsRetryAfterCooldown() {
+        val now = 1_000_000L
+        assertEquals(true, UpdatePolicy.shouldRunAutomaticCheck(0L, 0L, now))
+        assertEquals(false, UpdatePolicy.shouldRunAutomaticCheck(
+            now - UpdatePolicy.AUTO_UPDATE_CHECK_INTERVAL_MILLIS + 1L, 0L, now
+        ))
+        assertEquals(false, UpdatePolicy.shouldRunAutomaticCheck(
+            0L, now - UpdatePolicy.AUTO_UPDATE_RETRY_INTERVAL_MILLIS + 1L, now
+        ))
+        assertEquals(true, UpdatePolicy.shouldRunAutomaticCheck(
+            now - UpdatePolicy.AUTO_UPDATE_CHECK_INTERVAL_MILLIS, 0L, now
+        ))
+        assertEquals(true, UpdatePolicy.shouldRunAutomaticCheck(0L, now + 1L, now))
+    }
+
+    @Test
     fun acceptsOnlyStableThreePartVersions() {
         assertEquals(listOf(1, 2, 3), UpdatePolicy.parseVersion("v1.2.3"))
         assertEquals(listOf(0, 1, 0), UpdatePolicy.parseVersion("0.1.0"))

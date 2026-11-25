@@ -103,7 +103,18 @@ internal class InAppUpdater(
         return panel
     }
 
-    fun checkOnLaunch() { if (LauncherSettings(activity).autoUpdatesEnabled) checkForUpdates() }
+    fun checkOnLaunch() {
+        val preferences = LauncherSettings(activity)
+        if (!preferences.autoUpdatesEnabled) return
+        val now = System.currentTimeMillis()
+        if (!UpdatePolicy.shouldRunAutomaticCheck(
+                preferences.lastAutoUpdateSuccessAtMillis,
+                preferences.lastAutoUpdateAttemptAtMillis,
+                now,
+            )
+        ) return
+        checkForUpdates()
+    }
 
     fun onSaveInstanceState(outState: Bundle) {
         pendingInstallFile?.takeIf(File::isFile)?.let {
@@ -120,6 +131,7 @@ internal class InAppUpdater(
     }
 
     private fun checkForUpdates() {
+        LauncherSettings(activity).lastAutoUpdateAttemptAtMillis = System.currentTimeMillis()
         setBusy(true, "Checking the latest stable release…")
         thread {
             try {
@@ -132,6 +144,7 @@ internal class InAppUpdater(
                     ?: throw IllegalStateException("Release tag is not a valid stable version: $tag")
                 val currentVersion = UpdatePolicy.parseVersion(installedVersionName())
                     ?: throw IllegalStateException("Installed app version is invalid.")
+                LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
                 if (UpdatePolicy.compareVersions(latestVersion, currentVersion) <= 0) {
                     activity.runOnUiThread {
                         setBusy(false, "You are using the latest version (${installedVersionName()}).")

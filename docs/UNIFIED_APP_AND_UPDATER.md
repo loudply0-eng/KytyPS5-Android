@@ -13,6 +13,7 @@ The Kotlin namespace remains `com.kytyps5.android` so the upstream source packag
 ## In-app update behavior
 
 - Checks the latest published stable release from the PS5 Game Hub GitHub Releases API when the launcher opens.
+- Automatic checks are throttled to once every 12 hours; after a failed attempt, the app waits at least 30 minutes before retrying. Manual checks remain available at any time.
 - Offers a manual **Check for updates** action.
 - Accepts only stable three-part semantic version tags.
 - Requires exactly one APK asset and a valid GitHub SHA-256 digest.

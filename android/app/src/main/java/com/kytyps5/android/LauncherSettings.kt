@@ -12,6 +12,16 @@ class LauncherSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_UPDATES, true)
         set(value) { prefs.edit().putBoolean(KEY_AUTO_UPDATES, value).apply() }
 
+    /** Wall-clock timestamp of the last successful stable-release check. */
+    var lastAutoUpdateSuccessAtMillis: Long
+        get() = prefs.getLong(KEY_AUTO_UPDATE_LAST_SUCCESS, 0L)
+        set(value) { prefs.edit().putLong(KEY_AUTO_UPDATE_LAST_SUCCESS, value).apply() }
+
+    /** Wall-clock timestamp of the last automatic or manual update-check attempt. */
+    var lastAutoUpdateAttemptAtMillis: Long
+        get() = prefs.getLong(KEY_AUTO_UPDATE_LAST_ATTEMPT, 0L)
+        set(value) { prefs.edit().putLong(KEY_AUTO_UPDATE_LAST_ATTEMPT, value).apply() }
+
     var language: String
         get() = prefs.getString(KEY_LANGUAGE, "en")?.takeIf { it == "ar" || it == "en" } ?: "en"
         set(value) { prefs.edit().putString(KEY_LANGUAGE, if (value == "ar") "ar" else "en").apply() }
@@ -108,6 +118,8 @@ class LauncherSettings(context: Context) {
         private const val PREFS_NAME = "kytyps5_launcher"
         private const val KEY_GAMES_ROOT = "games_root"
         private const val KEY_AUTO_UPDATES = "auto_updates_enabled"
+        private const val KEY_AUTO_UPDATE_LAST_SUCCESS = "auto_update_last_success_at"
+        private const val KEY_AUTO_UPDATE_LAST_ATTEMPT = "auto_update_last_attempt_at"
         private const val KEY_LANGUAGE = "interface_language"
         private const val KEY_ACCENT_COLOR = "interface_accent_color"
         const val DEFAULT_ACCENT_COLOR = 0xFF1976D2.toInt()
