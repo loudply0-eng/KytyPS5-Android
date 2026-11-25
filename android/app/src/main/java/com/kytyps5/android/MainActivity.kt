@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private val worker: ExecutorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var scanRequest = 0
+    private var lastLanguage = "en"
 
     private lateinit var nativeStatus: TextView
     private lateinit var storageStatus: TextView
@@ -59,6 +60,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = LauncherSettings(this)
+        lastLanguage = settings.language
         drivers = GpuDriverPanel(
             activity = this,
             settings = settings,
@@ -97,6 +99,12 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (lastLanguage != settings.language) {
+            lastLanguage = settings.language
+            recreate()
+            return
+        }
+        applyAccentToButtons(window.decorView)
         updater.onResume()
         refreshStorageState()
         if (Environment.isExternalStorageManager()) {
@@ -128,7 +136,7 @@ class MainActivity : Activity() {
         )
         storageStatus = label("")
         grantButton = Button(this).apply {
-            text = "Grant all-files access"
+            text = localize("Grant all-files access")
             setOnClickListener { openAllFilesAccessSettings() }
         }
         folderPath = label(settings.gamesRoot, sizeSp = 16f)
@@ -155,11 +163,11 @@ class MainActivity : Activity() {
                     gravity = Gravity.CENTER_VERTICAL
                     addView(folderPath, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     addView(Button(context).apply {
-                        text = "Choose folder…"
+                        text = localize("Choose folder…")
                         setOnClickListener { openFolderPicker() }
                     })
                     addView(Button(context).apply {
-                        text = "Rescan"
+                        text = localize("Rescan")
                         setOnClickListener { onScanRequested() }
                     })
                 },
@@ -331,7 +339,7 @@ class MainActivity : Activity() {
     }
 
     private fun toggle(text: String, checked: Boolean, onChange: (Boolean) -> Unit) = CheckBox(this).apply {
-        this.text = text
+        this.text = localize(text)
         isChecked = checked
         setPadding(0, 0, 12.dp, 0)
         setOnCheckedChangeListener { _, value -> onChange(value) }
@@ -359,8 +367,44 @@ class MainActivity : Activity() {
         }
     }
 
+
     private fun showMessage(text: String) {
-        message.text = text
+        message.text = localize(text)
+    }
+
+    private fun applyAccentToButtons(view: View) {
+        if (view is Button) {
+            view.backgroundTintList = android.content.res.ColorStateList.valueOf(settings.accentColor)
+        }
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) applyAccentToButtons(view.getChildAt(index))
+        }
+    }
+
+    private fun localize(value: String): String {
+        if (settings.language != "ar") return value
+        val exact = mapOf(
+            "Emulator library: installed" to "مكتبة المحاكي: مثبتة",
+            "Grant all-files access" to "منح صلاحية الوصول إلى كل الملفات",
+            "Games folder" to "مجلد الألعاب",
+            "Choose folder…" to "اختيار مجلد…",
+            "Rescan" to "إعادة الفحص",
+            "Resolution  " to "الدقة  ",
+            "  Render scale  " to "  مقياس العرض  ",
+            "Performance HUD" to "عرض معلومات الأداء",
+            "Touch controls" to "أزرار التحكم باللمس",
+            "GPU driver" to "تعريف معالج الرسوميات",
+            "Grant all-files access to scan for games." to "امنح صلاحية الوصول إلى كل الملفات لفحص الألعاب.",
+            "Grant all-files access before scanning." to "امنح صلاحية الوصول إلى كل الملفات قبل الفحص.",
+            "No folder picker is available on this device." to "لا تتوفر أداة اختيار المجلدات على هذا الجهاز.",
+        )
+        exact[value]?.let { return it }
+        if (value.startsWith("Emulator library: missing")) return "مكتبة المحاكي غير موجودة (" + value.substringAfter("(")
+        if (value.startsWith("Scanning ")) return "جارٍ فحص " + value.removePrefix("Scanning ").removeSuffix(" ...") + "..."
+        if (value.startsWith("No games found here.")) return "لم يتم العثور على ألعاب في هذا المجلد. اختر مجلداً يحتوي على ملفات الألعاب."
+        if (value.startsWith("Pick a folder on device storage")) return "اختر مجلداً من ذاكرة الجهاز أو بطاقة SD؛ المجلدات السحابية غير مدعومة."
+        if (value.startsWith("Could not create ")) return "تعذر إنشاء " + value.removePrefix("Could not create ")
+        return value
     }
 
     private companion object {
