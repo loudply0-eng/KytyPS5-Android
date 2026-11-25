@@ -96,7 +96,24 @@ class SettingsActivity : Activity() {
             showAbout()
         })
         root.addView(actionButton(if (arabic) "رجوع" else "Back") { finish() })
-        return ScrollView(this).apply { addView(root) }
+        // Keep the complete settings page reachable on short screens and in landscape.
+        // Explicit child layout params prevent the ScrollView from measuring the content as a
+        // viewport-sized child, which can make the lower settings appear unreachable.
+        return ScrollView(this).apply {
+            isFillViewport = true
+            isSmoothScrollingEnabled = true
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            clipToPadding = false
+            setPadding(0, dp(8), 0, dp(20))
+            addView(
+                root,
+                ScrollView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
     }
 
     private fun chooseLanguage(value: String) {
