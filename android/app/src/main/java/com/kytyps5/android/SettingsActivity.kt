@@ -54,7 +54,7 @@ class SettingsActivity : Activity() {
         root.addView(text(if (arabic) "الإعدادات" else "Settings", 19f, true))
         root.addView(section(if (arabic) "التحديثات" else "Updates"))
         root.addView(toggleButton(
-            if (arabic) "التحديث التلقائي عند فتح التطبيق" else "Check for updates automatically",
+            if (arabic) "التحقق من التحديثات وتنزيلها تلقائياً" else "Automatically check and download updates",
             preferences.autoUpdatesEnabled
         ) { preferences.autoUpdatesEnabled = it })
         root.addView(updater.buildPanel())

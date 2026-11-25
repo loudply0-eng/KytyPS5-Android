@@ -82,7 +82,6 @@ class MainActivity : Activity() {
         updater = InAppUpdater(this, savedInstanceState)
         setContentView(buildUi())
         applyDefaultGpuDriver()
-        updater.checkOnLaunch()
     }
 
     /** Installs the bundled Turnip on Adreno 8xx on first run (off the main thread: EGL probe + unzip). */
@@ -106,6 +105,7 @@ class MainActivity : Activity() {
         }
         applyAccentToButtons(window.decorView)
         updater.onResume()
+        updater.checkOnLaunch()
         refreshStorageState()
         if (Environment.isExternalStorageManager()) {
             ensureDefaultGamesFolder()
