@@ -346,9 +346,13 @@ internal class InAppUpdater(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(intent)
-            status.text = localizeStatus("Verified update handed to Android installer. Approve it to complete installation.")
+            if (::status.isInitialized) {
+                status.text = localizeStatus("Verified update handed to Android installer. Approve it to complete installation.")
+            }
         } catch (error: Exception) {
-            status.text = localizeStatus("Could not open Android installer: ${error.message}")
+            if (::status.isInitialized) {
+                status.text = localizeStatus("Could not open Android installer: ${error.message}")
+            }
         }
     }
 
