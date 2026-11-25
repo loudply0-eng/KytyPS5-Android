@@ -164,7 +164,7 @@ internal class InAppUpdater(
                 val asset = apkAssets.single()
                 val digest = asset.optString("digest")
                 if (!digest.matches(Regex("^sha256:[0-9a-fA-F]{64}$"))) {
-                    throw IllegalStateException("Release APK has no valid GitHub SHA-256 digest. Update blocked.")
+                    throw IllegalStateException("Release APK has no valid SHA-256 digest. Update blocked.")
                 }
                 val downloadUrl = asset.optString("browser_download_url")
                 if (UpdatePolicy.trustedDownloadUrl(downloadUrl)?.host != "github.com") {
