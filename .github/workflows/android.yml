@@ -1,27 +1,34 @@
-name: Android APK
+name: Full Native Android Debug Integration
 
-# Every push to android-boot-wip builds the APK and refreshes the rolling "nightly" pre-release;
-# a v* tag publishes a versioned pre-release. Signing uses the repository's KYTY_* secrets.
+# Builds the ARM64 emulator libraries and a debug-only APK.
+# This workflow deliberately does not sign or publish releases: production updates
+# must be built in PS5-Game-Hub-Android with its established signing identity.
 on:
   push:
-    branches: [ android-boot-wip ]
-    tags: [ 'v*' ]
-    paths-ignore: [ 'docs/**', '**.md' ]
+    branches:
+      - android-boot-wip
+      - "feature/**"
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  pull_request:
+    branches:
+      - android-boot-wip
   workflow_dispatch:
 
 concurrency:
-  group: android-${{ github.ref }}
+  group: full-native-android-debug-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   NDK_VERSION: 28.2.13676358
 
 jobs:
   apk:
-    name: Build APK
+    name: Build ARM64 emulator and debug APK
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -30,6 +37,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Free disk space
         run: |
@@ -45,11 +53,17 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
 
-      - name: Android NDK
+      - name: Android SDK and NDK
+        shell: bash
         run: |
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "ndk;${NDK_VERSION}" > /dev/null
+          set -Eeuo pipefail
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses
+          set -o pipefail
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "ndk;${NDK_VERSION}"
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: ccache
@@ -72,8 +86,10 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK }}
         run: bash scripts/android/build-ffmpeg-android.sh "$PWD/_Build/ffmpeg-android"
 
-      - name: Configure
+      - name: Configure native emulator
+        shell: bash
         run: |
+          set -Eeuo pipefail
           cmake -S . -B _Build/android -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-31 -DCMAKE_BUILD_TYPE=Release \
@@ -82,91 +98,55 @@ jobs:
             -DKYTY_BUILD_ORIGIN=Fork -DKYTY_BUILD_REPOSITORY="$GITHUB_REPOSITORY" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
-      - name: Build native libraries
+      - name: Build native emulator
         run: |
+          set -Eeuo pipefail
           ccache --max-size=3G
           ninja -C _Build/android kyty_emulator
           ccache --show-stats
 
       - name: Stage native libraries
+        shell: bash
         run: |
-          ST=$RUNNER_TEMP/native
-          mkdir -p $ST/3rdparty/SDL3 $ST/3rdparty/libadrenotools/src/hook
+          set -Eeuo pipefail
+          ST="$RUNNER_TEMP/native"
+          mkdir -p "$ST/3rdparty/SDL3" "$ST/3rdparty/libadrenotools/src/hook"
           STRIP="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
-          "$STRIP" --strip-debug -o $ST/libmain.so _Build/android/libmain.so
-          cp _Build/android/3rdparty/SDL3/libSDL3.so $ST/3rdparty/SDL3/
-          cp _Build/android/3rdparty/libadrenotools/src/hook/*.so $ST/3rdparty/libadrenotools/src/hook/
-          ls -la $ST $ST/3rdparty/SDL3 $ST/3rdparty/libadrenotools/src/hook
+          "$STRIP" --strip-debug -o "$ST/libmain.so" _Build/android/libmain.so
+          cp _Build/android/3rdparty/SDL3/libSDL3.so "$ST/3rdparty/SDL3/"
+          cp _Build/android/3rdparty/libadrenotools/src/hook/*.so "$ST/3rdparty/libadrenotools/src/hook/"
+          test -s "$ST/libmain.so"
+          test -s "$ST/3rdparty/SDL3/libSDL3.so"
+          ls -la "$ST" "$ST/3rdparty/SDL3" "$ST/3rdparty/libadrenotools/src/hook"
 
-      - name: Version
-        id: version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            name="${GITHUB_REF_NAME#v}"; tag="$GITHUB_REF_NAME"
-          else
-            name="0.1.0-nightly.${GITHUB_RUN_NUMBER}"; tag="nightly"
-          fi
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "code=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
-
-      - name: Signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.KYTY_KEYSTORE_B64 }}
-        run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "KYTY_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-          fi
-
-      - name: Unit tests and APK
+      - name: Unit tests and debug APK
         working-directory: android
-        env:
-          KYTY_KEYSTORE_PASSWORD: ${{ secrets.KYTY_KEYSTORE_PASSWORD }}
-          KYTY_KEY_ALIAS: ${{ secrets.KYTY_KEY_ALIAS }}
-          KYTY_KEY_PASSWORD: ${{ secrets.KYTY_KEY_PASSWORD }}
+        shell: bash
         run: |
+          set -Eeuo pipefail
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          ./gradlew --no-daemon testDebugUnitTest assembleRelease \
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug \
             -PkytyNativeDir="$RUNNER_TEMP/native" \
-            -PkytyVersionCode=${{ steps.version.outputs.code }} \
-            -PkytyVersionName=${{ steps.version.outputs.name }}
-          out=app/build/outputs/apk/release
-          apk=$(ls $out/*.apk | head -1)
-          mv "$apk" "$GITHUB_WORKSPACE/KytyPS5-Android-${{ steps.version.outputs.name }}.apk"
-          rm -f "$RUNNER_TEMP/release.jks"
+            -PappVersionCode=1 \
+            -PappVersion=0.1.0
 
-      - name: Upload artifact
+      - name: Verify APK identity and native engine payload
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.ps5gamehub.android'"
+          for library in libmain.so libSDL3.so libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" list "$APK" | grep -Fx "lib/arm64-v8a/$library"
+          done
+          sha256sum "$APK"
+
+      - name: Upload full-native debug artifact
         uses: actions/upload-artifact@v4
         with:
-          name: KytyPS5-Android-${{ steps.version.outputs.name }}
-          path: KytyPS5-Android-*.apk
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          NAME: ${{ steps.version.outputs.name }}
-        run: |
-          apk="KytyPS5-Android-${NAME}.apk"
-          sha=$(sha256sum "$apk" | cut -d' ' -f1)
-          {
-            echo "Automatic build of \`${GITHUB_SHA::8}\` ($(git log -1 --format=%s))."
-            echo
-            echo "Install **${apk}**. The Turnip GPU driver is bundled. Nightlies install over each other."
-            echo "Coming from v0.1.0-alpha? Uninstall it once first; it was signed with a different key."
-            echo "SHA-256: \`${sha}\`"
-            echo
-            echo "Status, roadmap and how to help: [docs/android](https://github.com/${GITHUB_REPOSITORY}/tree/android-boot-wip/docs/android)."
-            echo
-            echo "Recent changes:"
-            git log -15 --format='- %s (%h)' --no-merges
-          } > notes.md
-          if [ "$TAG" = nightly ]; then
-            gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
-            gh release create nightly "$apk" --target "$GITHUB_SHA" --prerelease \
-              --title "Nightly (${NAME})" --notes-file notes.md
-          else
-            gh release create "$TAG" "$apk" --prerelease --title "KytyPS5 Android ${TAG}" \
-              --notes-file notes.md || gh release upload "$TAG" "$apk" --clobber
-          fi
+          name: ps5-game-hub-full-native-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

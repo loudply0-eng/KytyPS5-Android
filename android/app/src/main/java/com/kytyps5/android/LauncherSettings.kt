@@ -17,7 +17,7 @@ class LauncherSettings(context: Context) {
         get() = prefs.getLong(KEY_AUTO_UPDATE_LAST_SUCCESS, 0L)
         set(value) { prefs.edit().putLong(KEY_AUTO_UPDATE_LAST_SUCCESS, value).apply() }
 
-    /** Wall-clock timestamp of the last automatic or manual update-check attempt. */
+    /** Wall-clock timestamp of the last automatic update-check attempt. */
     var lastAutoUpdateAttemptAtMillis: Long
         get() = prefs.getLong(KEY_AUTO_UPDATE_LAST_ATTEMPT, 0L)
         set(value) { prefs.edit().putLong(KEY_AUTO_UPDATE_LAST_ATTEMPT, value).apply() }
