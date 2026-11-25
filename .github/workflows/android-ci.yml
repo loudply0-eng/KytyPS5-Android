@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "feat/**"
+      - "feature/**"
   pull_request:
     branches:
       - android-boot-wip
