@@ -32,7 +32,6 @@ class SettingsActivity : Activity() {
         preferences = LauncherSettings(this)
         updater = InAppUpdater(this, savedInstanceState)
         setContentView(buildScreen())
-        if (preferences.autoUpdatesEnabled) updater.checkOnLaunch()
     }
 
     override fun onResume() {
