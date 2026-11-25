@@ -3,6 +3,7 @@ package com.kytyps5.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -67,27 +68,33 @@ internal class InAppUpdater(
         panel.addView(TextView(activity).apply {
             text = ui("APP UPDATES", "تحديثات التطبيق")
             textSize = 17f
+            setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         status = TextView(activity).apply {
             text = localizeStatus("Installed version: ${installedVersionName()}")
             textSize = 13f
+            setTextColor(Color.WHITE)
             setPadding(0, 8, 0, 8)
         }
         panel.addView(status)
         progress = ProgressBar(activity).apply {
             visibility = View.GONE
             isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(LauncherSettings(activity).accentColor)
         }
         panel.addView(progress)
         updateButton = Button(activity).apply {
             text = ui("Check for updates", "التحقق من التحديثات")
+            setTextColor(Color.WHITE)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(LauncherSettings(activity).accentColor)
             setOnClickListener { checkForUpdates() }
         }
         panel.addView(updateButton)
         panel.addView(TextView(activity).apply {
             text = "Stable updates are checked from the official project releases. Downloads are verified before Android's installer opens; Android requires your approval to install."
             textSize = 12f
+            setTextColor(Color.LTGRAY)
             alpha = 0.75f
             setPadding(0, 6, 0, 0)
         })
