@@ -73,7 +73,7 @@ internal class InAppUpdater(
         return panel
     }
 
-    fun checkOnLaunch() = checkForUpdates()
+    fun checkOnLaunch() { if (LauncherSettings(activity).autoUpdatesEnabled) checkForUpdates() }
 
     fun onSaveInstanceState(outState: Bundle) {
         pendingInstallFile?.takeIf(File::isFile)?.let {
