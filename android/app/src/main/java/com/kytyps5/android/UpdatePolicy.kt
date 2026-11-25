@@ -58,3 +58,11 @@ internal object UpdatePolicy {
         return trustedDownloadUrl(resolved.toString())
     }
 }
+
+
+/** User-facing updater failures intentionally omit exception text, URLs, hosts and local paths. */
+internal object UpdateErrorMessages {
+    const val CHECK_FAILED = "Couldn't check for updates. Try again later."
+    const val DOWNLOAD_FAILED = "The update couldn't be downloaded or verified."
+    const val INSTALLER_FAILED = "Couldn't open the Android installer."
+}

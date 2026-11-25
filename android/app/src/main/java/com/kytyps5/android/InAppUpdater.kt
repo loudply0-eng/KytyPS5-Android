@@ -51,14 +51,14 @@ internal class InAppUpdater(
             "Checking the latest stable release…" to "جارٍ التحقق من أحدث إصدار مستقر…",
             "You are using the latest version" to "أنت تستخدم أحدث إصدار",
             "Download verified. Preparing Android installer…" to "تم التحقق من التحديث. جارٍ تجهيز مُثبّت أندرويد…",
-            "Verified update handed to Android installer. Approve it to complete installation." to "تم تسليم التحديث المُتحقق منه إلى مُثبّت أندرويد. وافق لإكمال التثبيت."
+            "Verified update handed to Android installer. Approve it to complete installation." to "تم تسليم التحديث المُتحقق منه إلى مُثبّت أندرويد. وافق لإكمال التثبيت.",
+            UpdateErrorMessages.CHECK_FAILED to "تعذر التحقق من التحديث. حاول مرة أخرى لاحقاً.",
+            UpdateErrorMessages.DOWNLOAD_FAILED to "تعذر تنزيل التحديث أو التحقق من سلامته.",
+            UpdateErrorMessages.INSTALLER_FAILED to "تعذر فتح مُثبّت أندرويد."
         )
         translations[value]?.let { return it }
         if (value.startsWith("Installed version: ")) return "الإصدار المثبّت: " + value.removePrefix("Installed version: ")
         if (value.startsWith("Update available: ")) return "يتوفر تحديث: " + value.removePrefix("Update available: ")
-        if (value.startsWith("Update check failed: ")) return "فشل التحقق من التحديث: " + value.removePrefix("Update check failed: ")
-        if (value.startsWith("Update download rejected: ")) return "تم رفض تنزيل التحديث: " + value.removePrefix("Update download rejected: ")
-        if (value.startsWith("Could not open Android installer: ")) return "تعذر فتح مُثبّت أندرويد: " + value.removePrefix("Could not open Android installer: ")
         return value
     }
 
@@ -198,7 +198,7 @@ internal class InAppUpdater(
                 }
             } catch (error: Exception) {
                 activity.runOnUiThread {
-                    setBusy(false, "Update check failed: ${error.message ?: "network error"}")
+                    setBusy(false, UpdateErrorMessages.CHECK_FAILED)
                 }
             }
         }
@@ -316,7 +316,7 @@ internal class InAppUpdater(
             } catch (error: Exception) {
                 temp?.delete()
                 activity.runOnUiThread {
-                    setBusy(false, "Update download rejected: ${error.message ?: "unknown error"}")
+                    setBusy(false, UpdateErrorMessages.DOWNLOAD_FAILED)
                 }
             } finally {
                 connection?.disconnect()
@@ -376,7 +376,7 @@ internal class InAppUpdater(
             }
         } catch (error: Exception) {
             if (::status.isInitialized) {
-                status.text = localizeStatus("Could not open Android installer: ${error.message}")
+                status.text = localizeStatus(UpdateErrorMessages.INSTALLER_FAILED)
             }
         }
     }

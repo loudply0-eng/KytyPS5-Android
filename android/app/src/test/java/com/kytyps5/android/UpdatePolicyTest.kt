@@ -8,6 +8,21 @@ import java.net.URL
 
 class UpdatePolicyTest {
     @Test
+    fun updaterFailureMessagesAreGenericAndDoNotExposeTechnicalDetails() {
+        val messages = listOf(
+            UpdateErrorMessages.CHECK_FAILED,
+            UpdateErrorMessages.DOWNLOAD_FAILED,
+            UpdateErrorMessages.INSTALLER_FAILED,
+        )
+        messages.forEach { message ->
+            assertEquals(false, message.contains("https://", ignoreCase = true))
+            assertEquals(false, message.contains("github.com", ignoreCase = true))
+            assertEquals(false, message.contains("/data/", ignoreCase = true))
+            assertEquals(false, message.contains("Exception", ignoreCase = true))
+        }
+    }
+
+    @Test
     fun throttlesAutomaticChecksButAllowsRetryAfterCooldown() {
         val now = 10L * UpdatePolicy.AUTO_UPDATE_CHECK_INTERVAL_MILLIS
         assertEquals(true, UpdatePolicy.shouldRunAutomaticCheck(0L, 0L, now))
