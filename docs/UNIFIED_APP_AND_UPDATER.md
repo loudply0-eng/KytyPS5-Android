@@ -12,7 +12,7 @@ The Kotlin namespace remains `com.kytyps5.android` so the upstream source packag
 
 ## In-app update behavior
 
-- Checks the latest published stable release from the PS5 Game Hub GitHub Releases API when the launcher opens.
+- Checks the latest published stable release from the PS5 Game Hub GitHub Releases API when the launcher resumes and the saved retry policy allows it.
 - Automatic checks are throttled to once every 12 hours when the app is already current; a failed check or download can retry after at least 30 minutes. Manual checks remain available at any time.
 - When the launcher starts or returns to the foreground and a check is due, it checks for a newer stable release. If found, the APK downloads automatically and is verified before Android's installer opens. Android still requires the user's final approval to install; no silent-install bypass is used.
 - Check timestamps are stored in app-private preferences and survive launcher restarts; disabling automatic checks stops launch-triggered requests without disabling the manual check button.

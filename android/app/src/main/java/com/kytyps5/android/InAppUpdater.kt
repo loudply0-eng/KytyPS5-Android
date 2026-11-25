@@ -288,7 +288,12 @@ internal class InAppUpdater(
                                     )
                                 )
                             }
-                            .setNegativeButton(ui("Cancel", "إلغاء"), null)
+                            .setNegativeButton(ui("Cancel", "إلغاء")) { _, _ ->
+                                pendingInstallFile = null
+                            }
+                            .setOnCancelListener {
+                                pendingInstallFile = null
+                            }
                             .show()
                     } else {
                         openSystemInstaller(apkFile)
