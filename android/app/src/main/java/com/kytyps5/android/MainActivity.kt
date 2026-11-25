@@ -347,11 +347,11 @@ class MainActivity : Activity() {
 
     private fun refreshStorageState() {
         val granted = Environment.isExternalStorageManager()
-        storageStatus.text = if (granted) {
+        storageStatus.text = localize(if (granted) {
             "All-files access: granted"
         } else {
             "All-files access: not granted. Games live on shared storage, so the launcher needs it."
-        }
+        })
         grantButton.visibility = if (granted) View.GONE else View.VISIBLE
     }
 
@@ -385,6 +385,8 @@ class MainActivity : Activity() {
         if (settings.language != "ar") return value
         val exact = mapOf(
             "Emulator library: installed" to "مكتبة المحاكي: مثبتة",
+            "All-files access: granted" to "صلاحية الوصول إلى كل الملفات: ممنوحة",
+            "All-files access: not granted. Games live on shared storage, so the launcher needs it." to "صلاحية الوصول إلى الملفات غير ممنوحة. مجلدات الألعاب موجودة في التخزين المشترك، لذلك يحتاج التطبيق لهذه الصلاحية.",
             "Grant all-files access" to "منح صلاحية الوصول إلى كل الملفات",
             "Games folder" to "مجلد الألعاب",
             "Choose folder…" to "اختيار مجلد…",
@@ -418,7 +420,7 @@ class MainActivity : Activity() {
         bold: Boolean = false,
         secondary: Boolean = false,
     ): TextView = TextView(this).apply {
-        this.text = text
+        this.text = localize(text)
         textSize = sizeSp
         if (bold) setTypeface(typeface, Typeface.BOLD)
         if (secondary) alpha = 0.7f
