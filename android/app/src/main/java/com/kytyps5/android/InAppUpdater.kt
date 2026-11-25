@@ -43,6 +43,7 @@ internal class InAppUpdater(
         if (LauncherSettings(activity).language == "ar") arabic else english
 
     private fun localizeStatus(value: String): String {
+        if (LauncherSettings(activity).language != "ar") return value
         val translations = mapOf(
             "APP UPDATES" to "تحديثات التطبيق",
             "Downloading update…" to "جارٍ تنزيل التحديث…",
