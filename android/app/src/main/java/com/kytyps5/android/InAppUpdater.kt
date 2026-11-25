@@ -175,7 +175,7 @@ internal class InAppUpdater(
                     // Auto-checks download verified updates without an extra in-app confirmation.
                     // Android's package installer still requires the user's final approval.
                     activity.runOnUiThread {
-                        downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"), tag)
+                        downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"), tag, automatic = true)
                     }
                     return@thread
                 }
@@ -200,7 +200,12 @@ internal class InAppUpdater(
         }
     }
 
-    private fun downloadAndInstall(downloadUrl: String, expectedSha256: String, expectedVersionName: String) {
+    private fun downloadAndInstall(
+        downloadUrl: String,
+        expectedSha256: String,
+        expectedVersionName: String,
+        automatic: Boolean = false,
+    ) {
         setBusy(true, "Downloading update…")
         thread {
             var temp: File? = null
@@ -268,6 +273,11 @@ internal class InAppUpdater(
                 }
                 if (!temp.renameTo(apkFile)) throw IllegalStateException("Cannot finalize downloaded APK.")
                 temp = null
+                // A verified automatic download is a successful check. Do not repeatedly
+                // reopen the installer every 30 minutes if the user chooses not to install yet.
+                if (automatic) {
+                    LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
+                }
 
                 activity.runOnUiThread {
                     setBusy(false, "Download verified. Preparing Android installer…")
