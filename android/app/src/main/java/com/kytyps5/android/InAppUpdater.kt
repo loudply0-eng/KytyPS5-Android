@@ -113,7 +113,7 @@ internal class InAppUpdater(
                 now,
             )
         ) return
-        checkForUpdates()
+        checkForUpdates(automatic = true)
     }
 
     fun onSaveInstanceState(outState: Bundle) {
@@ -130,7 +130,7 @@ internal class InAppUpdater(
         }
     }
 
-    private fun checkForUpdates() {
+    private fun checkForUpdates(automatic: Boolean = false) {
         LauncherSettings(activity).lastAutoUpdateAttemptAtMillis = System.currentTimeMillis()
         setBusy(true, "Checking the latest stable release…")
         thread {
@@ -171,8 +171,14 @@ internal class InAppUpdater(
                     throw SecurityException("APK URL is not an approved HTTPS GitHub release URL.")
                 }
                 val notes = release.optString("body").take(2500)
-                // Record success only after the newer release and its download metadata pass validation.
-                LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
+                if (automatic) {
+                    // Auto-checks download verified updates without an extra in-app confirmation.
+                    // Android's package installer still requires the user's final approval.
+                    activity.runOnUiThread {
+                        downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"), tag)
+                    }
+                    return@thread
+                }
                 activity.runOnUiThread {
                     setBusy(false, "Update available: $tag")
                     AlertDialog.Builder(activity)
