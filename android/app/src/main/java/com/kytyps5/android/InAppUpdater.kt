@@ -38,18 +38,39 @@ internal class InAppUpdater(
         ?.takeIf { it == UPDATE_APK_FILE }
         ?.let { File(File(activity.cacheDir, UPDATE_DIRECTORY), it).takeIf(File::isFile) }
 
+    private fun ui(english: String, arabic: String): String =
+        if (LauncherSettings(activity).language == "ar") arabic else english
+
+    private fun localizeStatus(value: String): String {
+        val translations = mapOf(
+            "APP UPDATES" to "تحديثات التطبيق",
+            "Check for updates" to "التحقق من التحديثات",
+            "Checking the latest stable release…" to "جارٍ التحقق من أحدث إصدار مستقر…",
+            "You are using the latest version" to "أنت تستخدم أحدث إصدار",
+            "Download verified. Preparing Android installer…" to "تم التحقق من التحديث. جارٍ تجهيز مُثبّت أندرويد…",
+            "Verified update handed to Android installer. Approve it to complete installation." to "تم تسليم التحديث المُتحقق منه إلى مُثبّت أندرويد. وافق لإكمال التثبيت."
+        )
+        translations[value]?.let { return it }
+        if (value.startsWith("Installed version: ")) return "الإصدار المثبّت: " + value.removePrefix("Installed version: ")
+        if (value.startsWith("Update available: ")) return "يتوفر تحديث: " + value.removePrefix("Update available: ")
+        if (value.startsWith("Update check failed: ")) return "فشل التحقق من التحديث: " + value.removePrefix("Update check failed: ")
+        if (value.startsWith("Update download rejected: ")) return "تم رفض تنزيل التحديث: " + value.removePrefix("Update download rejected: ")
+        if (value.startsWith("Could not open Android installer: ")) return "تعذر فتح مُثبّت أندرويد: " + value.removePrefix("Could not open Android installer: ")
+        return value
+    }
+
     fun buildPanel(): View {
         val panel = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 20, 0, 12)
         }
         panel.addView(TextView(activity).apply {
-            text = "APP UPDATES"
+            text = ui("APP UPDATES", "تحديثات التطبيق")
             textSize = 17f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         status = TextView(activity).apply {
-            text = "Installed version: ${installedVersionName()}"
+            text = localizeStatus("Installed version: ${installedVersionName()}")
             textSize = 13f
             setPadding(0, 8, 0, 8)
         }
@@ -60,7 +81,7 @@ internal class InAppUpdater(
         }
         panel.addView(progress)
         updateButton = Button(activity).apply {
-            text = "Check for updates"
+            text = ui("Check for updates", "التحقق من التحديثات")
             setOnClickListener { checkForUpdates() }
         }
         panel.addView(updateButton)
@@ -130,13 +151,13 @@ internal class InAppUpdater(
                 activity.runOnUiThread {
                     setBusy(false, "Update available: $tag")
                     AlertDialog.Builder(activity)
-                        .setTitle("Update available — $tag")
+                        .setTitle(ui("Update available — $tag", "يتوفر تحديث — $tag"))
                         .setMessage(
                             "Current version: ${installedVersionName()}\nNew version: $tag\n\n$notes\n\n" +
                                 "The APK will be downloaded and checked before Android's installer opens."
                         )
-                        .setNegativeButton("Later", null)
-                        .setPositiveButton("Download and install") { _, _ ->
+                        .setNegativeButton(ui("Later", "لاحقاً"), null)
+                        .setPositiveButton(ui("Download and install", "تنزيل وتثبيت")) { _, _ ->
                             downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"))
                         }
                         .show()
@@ -206,12 +227,12 @@ internal class InAppUpdater(
                     ) {
                         pendingInstallFile = apkFile
                         AlertDialog.Builder(activity)
-                            .setTitle("Allow app updates")
+                            .setTitle(ui("Allow app updates", "السماح بتحديث التطبيق"))
                             .setMessage(
                                 "Android needs permission to install updates initiated by this app. " +
                                     "Enable it on the next screen, then return here."
                             )
-                            .setPositiveButton("Open settings") { _, _ ->
+                            .setPositiveButton(ui("Open settings", "فتح الإعدادات")) { _, _ ->
                                 activity.startActivity(
                                     Intent(
                                         Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -219,7 +240,7 @@ internal class InAppUpdater(
                                     )
                                 )
                             }
-                            .setNegativeButton("Cancel", null)
+                            .setNegativeButton(ui("Cancel", "إلغاء"), null)
                             .show()
                     } else {
                         openSystemInstaller(apkFile)
@@ -283,9 +304,9 @@ internal class InAppUpdater(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(intent)
-            status.text = "Verified update handed to Android installer. Approve it to complete installation."
+            status.text = localizeStatus("Verified update handed to Android installer. Approve it to complete installation.")
         } catch (error: Exception) {
-            status.text = "Could not open Android installer: ${error.message}"
+            status.text = localizeStatus("Could not open Android installer: ${error.message}")
         }
     }
 
@@ -340,7 +361,7 @@ internal class InAppUpdater(
         if (!::status.isInitialized || !::updateButton.isInitialized || !::progress.isInitialized) return
         updateButton.isEnabled = !busy
         progress.visibility = if (busy) View.VISIBLE else View.GONE
-        status.text = message
+        status.text = localizeStatus(message)
     }
 
     private companion object {
