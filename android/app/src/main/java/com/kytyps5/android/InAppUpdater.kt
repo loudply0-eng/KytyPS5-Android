@@ -166,7 +166,7 @@ internal class InAppUpdater(
                         )
                         .setNegativeButton(ui("Later", "لاحقاً"), null)
                         .setPositiveButton(ui("Download and install", "تنزيل وتثبيت")) { _, _ ->
-                            downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"))
+                            downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"), tag)
                         }
                         .show()
                 }
@@ -178,7 +178,7 @@ internal class InAppUpdater(
         }
     }
 
-    private fun downloadAndInstall(downloadUrl: String, expectedSha256: String) {
+    private fun downloadAndInstall(downloadUrl: String, expectedSha256: String, expectedVersionName: String) {
         setBusy(true, "Downloading update…")
         thread {
             var temp: File? = null
@@ -219,6 +219,25 @@ internal class InAppUpdater(
                 }
                 if (!actual.equals(expectedSha256, ignoreCase = true)) {
                     throw SecurityException("APK SHA-256 mismatch. The downloaded update was rejected.")
+                }
+
+                // Verify the APK's embedded Android package metadata before handing it to the installer.
+                // The installer independently enforces the signing-certificate continuity.
+                val archiveInfo = activity.packageManager.getPackageArchiveInfo(temp.absolutePath, 0)
+                    ?: throw SecurityException("Downloaded file is not a readable Android APK.")
+                if (archiveInfo.packageName != activity.packageName) {
+                    throw SecurityException("APK package identity does not match this application.")
+                }
+                val archiveVersion = UpdatePolicy.parseVersion(archiveInfo.versionName.orEmpty())
+                    ?: throw SecurityException("APK version name is invalid.")
+                val releaseVersion = UpdatePolicy.parseVersion(expectedVersionName)
+                    ?: throw SecurityException("Release version is invalid.")
+                if (UpdatePolicy.compareVersions(archiveVersion, releaseVersion) != 0) {
+                    throw SecurityException("APK version does not match the published release tag.")
+                }
+                val installedInfo = activity.packageManager.getPackageInfo(activity.packageName, 0)
+                if (archiveInfo.longVersionCode <= installedInfo.longVersionCode) {
+                    throw SecurityException("APK version code is not newer than the installed application.")
                 }
 
                 val apkFile = File(updateDirectory, UPDATE_APK_FILE)
