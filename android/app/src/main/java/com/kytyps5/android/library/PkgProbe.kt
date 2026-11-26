@@ -15,6 +15,8 @@ data class PkgProbeResult(
     val kind: Kind,
     val cntOffset: Long? = null,
     val cntSize: Long? = null,
+    /** Raw FIH byte at 0x05: 0x00 debug, 0x80 retail/submitted in the documented layout. */
+    val fihSignedByte: Int? = null,
 ) {
     enum class Kind {
         PS5_FIH,
@@ -27,6 +29,7 @@ data class PkgProbeResult(
 object PkgProbe {
     private const val MAGIC_SIZE = 4
     private const val FIH_HEADER_SIZE = 0x10000L
+    private const val FIH_SIGNED_BYTE_FIELD = 0x05L
     private const val FIH_PFS_OFFSET_FIELD = 0x10L
     private const val FIH_PFS_SIZE_FIELD = 0x18L
     private const val FIH_CNT_OFFSET_FIELD = 0x58L
@@ -67,6 +70,8 @@ object PkgProbe {
     private fun probeFih(raf: RandomAccessFile, fileSize: Long): PkgProbeResult {
         if (fileSize < FIH_HEADER_SIZE) return malformed()
 
+        raf.seek(FIH_SIGNED_BYTE_FIELD)
+        val fihSignedByte = raf.readUnsignedByte()
         raf.seek(FIH_PFS_OFFSET_FIELD)
         val pfsOffset = readLe64(raf)
         raf.seek(FIH_PFS_SIZE_FIELD)
@@ -94,7 +99,7 @@ object PkgProbe {
             return malformed()
         }
 
-        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize)
+        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte)
     }
 
     private fun malformed() =
