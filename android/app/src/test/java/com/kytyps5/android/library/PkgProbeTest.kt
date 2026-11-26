@@ -110,7 +110,7 @@ class PkgProbeTest {
 
     @Test
     fun rejectsCntOverlappingPfsSegment() {
-        val file = writeFih("overlap.pkg", 0x10000L, 0x20000L, 0x20000L, 0x5A0L)
+        val file = writeFih("overlap.pkg", 0x10000L, 0x20000L, 0x20000L, 0x5A0L, fileSizeOverride = 0x305a0)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
