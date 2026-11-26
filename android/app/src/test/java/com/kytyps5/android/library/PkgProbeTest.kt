@@ -29,7 +29,10 @@ class PkgProbeTest {
     @Test
     fun recognizesFihWithValidPfsAndCntSegments() {
         val file = writeFih("valid.pkg", 0x10000L, 0x100L, 0x10100L, 0x5A0L)
-        assertEquals(PkgProbeResult.Kind.PS5_FIH, PkgProbe.probe(file).kind)
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(0x10100L, result.cntOffset)
+        assertEquals(0x5A0L, result.cntSize)
     }
 
     @Test
