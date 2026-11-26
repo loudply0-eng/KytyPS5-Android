@@ -58,7 +58,7 @@ class PkgProbeTest {
 
     @Test
     fun rejectsCntSegmentOutsideFile() {
-        val file = writeFih("cnt-outside.pkg", 0x10000L, 0x100L, 0x10100L, 0x1000L)
+        val file = writeFih("cnt-outside.pkg", 0x10000L, 0x100L, 0x10100L, 0x1000L, fileSizeOverride = 0x10600)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
@@ -99,15 +99,16 @@ class PkgProbeTest {
         cntOffset: Long,
         cntSize: Long,
         cntMagic: String = "CNT",
+        fileSizeOverride: Int? = null,
     ): File {
-        val fileSize = (cntOffset + cntSize).coerceAtLeast(0x10000L).toInt()
+        val fileSize = fileSizeOverride ?: (cntOffset + cntSize).coerceAtLeast(0x10000L).toInt()
         val bytes = ByteArray(fileSize)
         putMagic(bytes, "FIH")
         putLe64(bytes, 0x10, pfsOffset)
         putLe64(bytes, 0x18, pfsSize)
         putLe64(bytes, 0x58, cntOffset)
         putLe64(bytes, 0xA0, cntSize)
-        if (cntOffset >= 0 && cntOffset + 4 <= bytes.size) {
+        if (cntOffset >= 0 && cntOffset + 4 <= bytes.size.toLong()) {
             putMagicAt(bytes, cntOffset.toInt(), cntMagic)
         }
         return File(root, name).apply { writeBytes(bytes) }
