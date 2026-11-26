@@ -80,6 +80,7 @@ std::optional<uint64_t> FileSize(std::ifstream& file) {
 
 // Resolved location of one exFAT volume inside the image file.
 struct Volume {
+	uint64_t volume_bytes  = 0;
 	uint64_t cluster_bytes = 0;
 	uint64_t fat_byte      = 0; // the active FAT
 	uint64_t heap_byte     = 0; // cluster 2
@@ -112,6 +113,11 @@ std::optional<Volume> ParseBootSector(const uint8_t* sector, uint64_t base) {
 	}
 
 	const uint64_t volume_length = LoadU64(sector + 72);
+	const uint64_t sector_bytes  = uint64_t{1} << bytes_shift;
+	if (volume_length == 0 || volume_length > (UINT64_MAX - base) / sector_bytes) {
+		return {};
+	}
+	const uint64_t volume_bytes = volume_length * sector_bytes;
 	const uint64_t fat_offset    = LoadU32(sector + 80);
 	const uint64_t fat_length    = LoadU32(sector + 84);
 	const uint64_t heap_offset   = LoadU32(sector + 88);
@@ -135,6 +141,7 @@ std::optional<Volume> ParseBootSector(const uint8_t* sector, uint64_t base) {
 
 	const uint64_t active_fat = (fat_count == 2 && (flags & VolumeFlagActiveFat) != 0) ? 1 : 0;
 	Volume         volume;
+	volume.volume_bytes  = volume_bytes;
 	volume.cluster_bytes = uint64_t{1} << (bytes_shift + cluster_shift);
 	volume.fat_byte      = base + ((fat_offset + active_fat * fat_length) << bytes_shift);
 	volume.heap_byte     = base + (heap_offset << bytes_shift);
@@ -151,7 +158,11 @@ std::optional<Volume> ProbeVolume(std::ifstream& file, uint64_t base, uint64_t f
 	if (!ReadBytes(file, base, sector.data(), sector.size())) {
 		return {};
 	}
-	return ParseBootSector(sector.data(), base);
+	auto volume = ParseBootSector(sector.data(), base);
+	if (!volume || volume->volume_bytes > file_size - base) {
+		return {};
+	}
+	return volume;
 }
 
 // A raw volume at byte 0, or the first exFAT partition of an MBR or GPT disk.
