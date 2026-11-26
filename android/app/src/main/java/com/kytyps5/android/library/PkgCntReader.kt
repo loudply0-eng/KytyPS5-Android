@@ -90,7 +90,7 @@ object PkgCntReader {
                 }
 
                 val publicEntries = rawEntries.map { entry ->
-                    val name = if (nameBytes == null || entry.id == ENTRY_NAMES_ID) {
+                    val name = if (nameBytes == null || entry.id == ENTRY_NAMES_ID || entry.nameOffset == 0L) {
                         null
                     } else {
                         readName(nameBytes, entry.nameOffset) ?: return null
