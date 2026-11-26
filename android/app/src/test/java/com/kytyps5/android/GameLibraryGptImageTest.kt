@@ -40,8 +40,8 @@ class GameLibraryGptImageTest {
         "EFI PART".toByteArray(Charsets.US_ASCII).copyInto(disk, header)
         val badLba = Long.MAX_VALUE / 512L + 1L
         for (i in 0 until 8) disk[header + 72 + i] = (badLba ushr (8 * i)).toByte()
-        disk[header + 80] = 1
-        disk[header + 84] = 128
+        disk[header + 80] = 1.toByte()
+        disk[header + 84] = 128.toByte()
 
         File(root, "malformed-gpt.img").writeBytes(disk)
 
