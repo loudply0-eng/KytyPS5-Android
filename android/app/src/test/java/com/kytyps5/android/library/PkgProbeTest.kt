@@ -8,7 +8,6 @@ import org.junit.Before
 import org.junit.Test
 
 class PkgProbeTest {
-
     private lateinit var root: File
 
     @Before
@@ -28,89 +27,69 @@ class PkgProbeTest {
     }
 
     @Test
-    fun recognizesFihAndValidatesPfsRange() {
-        val file = File(root, "game.pkg")
-        val bytes = ByteArray(0x100)
-        bytes[0] = 0x7f
-        bytes[1] = 'F'.code.toByte()
-        bytes[2] = 'I'.code.toByte()
-        bytes[3] = 'H'.code.toByte()
-        putLe64(bytes, 0x10, 0x80)
-        putLe64(bytes, 0x18, 0x40)
-        file.writeBytes(bytes)
-
+    fun recognizesFihWithCanonicalPfsOffsetAndValidRange() {
+        val file = writeFih("valid.pkg", 0x10000L, 0x100L, 0x10100)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, PkgProbe.probe(file).kind)
     }
 
     @Test
-    fun rejectsFihPfsRangeBeyondFile() {
-        val file = File(root, "broken.pkg")
-        val bytes = ByteArray(0x100)
-        bytes[0] = 0x7f
-        bytes[1] = 'F'.code.toByte()
-        bytes[2] = 'I'.code.toByte()
-        bytes[3] = 'H'.code.toByte()
-        putLe64(bytes, 0x10, 0xF0)
-        putLe64(bytes, 0x18, 0x40)
-        file.writeBytes(bytes)
-
+    fun rejectsNonCanonicalPfsOffset() {
+        val file = writeFih("wrong-offset.pkg", 0x10001L, 0xFFL, 0x10100)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
-    fun recognizesLihWithoutGuessingItsInternalLayout() {
-        val file = File(root, "patch.pkg")
-        val bytes = ByteArray(4)
-        bytes[0] = 0x7f
-        bytes[1] = 'L'.code.toByte()
-        bytes[2] = 'I'.code.toByte()
-        bytes[3] = 'H'.code.toByte()
-        file.writeBytes(bytes)
-
-        assertEquals(PkgProbeResult.Kind.PS5_LIH, PkgProbe.probe(file).kind)
+    fun rejectsPfsRangeBeyondFile() {
+        val file = writeFih("truncated-pfs.pkg", 0x10000L, 0x200L, 0x10100)
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsEmptyPfsRange() {
-        val file = File(root, "empty-pfs.pkg")
-        val bytes = ByteArray(0x100)
-        bytes[0] = 0x7f
-        bytes[1] = 'F'.code.toByte()
-        bytes[2] = 'I'.code.toByte()
-        bytes[3] = 'H'.code.toByte()
-        putLe64(bytes, 0x10, 0x80)
-        putLe64(bytes, 0x18, 0)
-        file.writeBytes(bytes)
-
+        val file = writeFih("empty-pfs.pkg", 0x10000L, 0L, 0x10000)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsPfsRangeOverlappingFihHeader() {
-        val file = File(root, "header-overlap.pkg")
-        val bytes = ByteArray(0x100)
-        bytes[0] = 0x7f
-        bytes[1] = 'F'.code.toByte()
-        bytes[2] = 'I'.code.toByte()
-        bytes[3] = 'H'.code.toByte()
-        putLe64(bytes, 0x10, 0x10)
-        putLe64(bytes, 0x18, 0x40)
-        file.writeBytes(bytes)
-
+        val file = writeFih("header-overlap.pkg", 0x80L, 0x40L, 0x10100)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
-    fun truncatedFihIsMalformed() {
+    fun rejectsTruncatedFihHeader() {
         val file = File(root, "truncated.pkg")
-        file.writeBytes(byteArrayOf(0x7f, 'F'.code.toByte(), 'I'.code.toByte(), 'H'.code.toByte()))
-
+        val bytes = ByteArray(0x100)
+        putMagic(bytes, "FIH")
+        file.writeBytes(bytes)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
+    @Test
+    fun recognizesLihSignatureWithoutClaimingLayoutValidation() {
+        val file = File(root, "patch.pkg")
+        val bytes = ByteArray(4)
+        putMagic(bytes, "LIH")
+        file.writeBytes(bytes)
+        assertEquals(PkgProbeResult.Kind.PS5_LIH, PkgProbe.probe(file).kind)
+    }
+
+    private fun writeFih(name: String, offset: Long, size: Long, fileSize: Int): File {
+        val bytes = ByteArray(fileSize)
+        putMagic(bytes, "FIH")
+        putLe64(bytes, 0x10, offset)
+        putLe64(bytes, 0x18, size)
+        return File(root, name).apply { writeBytes(bytes) }
+    }
+
+    private fun putMagic(bytes: ByteArray, suffix: String) {
+        bytes[0] = 0x7f
+        bytes[1] = suffix[0].code.toByte()
+        bytes[2] = suffix[1].code.toByte()
+        bytes[3] = suffix[2].code.toByte()
+    }
+
     private fun putLe64(bytes: ByteArray, offset: Int, value: Long) {
-        for (i in 0 until 8) {
-            bytes[offset + i] = (value ushr (i * 8)).toByte()
-        }
+        for (i in 0 until 8) bytes[offset + i] = (value ushr (i * 8)).toByte()
     }
 }
