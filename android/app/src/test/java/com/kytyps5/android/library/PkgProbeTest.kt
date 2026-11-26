@@ -30,25 +30,25 @@ class PkgProbeTest {
 
     @Test
     fun recognizesFihWithValidPfsAndCntSegments() {
-        val file = writeFih("valid.pkg", 0x10000L, 0x100L, 0x10100L, 0x5A0L)
+        val file = writeFih("valid.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L)
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
-        assertEquals(0x10100L, result.cntOffset)
+        assertEquals(0x20000L, result.cntOffset)
         assertEquals(0x5A0L, result.cntSize)
         assertEquals(0x00, result.fihSignedByte)
     }
 
     @Test
     fun preservesRetailSignedByteWithoutClaimingRetailInstallSupport() {
-        val file = writeFih("retail-marker.pkg", 0x10000L, 0x100L, 0x10100L, 0x5A0L, signedByte = 0x80)
+        val file = writeFih("retail-marker.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, signedByte = 0x80)
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
     }
     @Test
     fun readMetadataConnectsValidatedFihToBoundedCntReader() {
-        val cntOffset = 0x10100L
-        val file = writeFih("metadata.pkg", 0x10000L, 0x100L, cntOffset, 0x800L)
+        val cntOffset = 0x20000L
+        val file = writeFih("metadata.pkg", 0x10000L, 0x10000L, cntOffset, 0x800L)
         val json = """{"title":"Synthetic FIH"}""".toByteArray(Charsets.UTF_8)
         val names = byteArrayOf(0) + "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
 
@@ -80,7 +80,7 @@ class PkgProbeTest {
     @Test
     fun readMetadataRejectsMalformedCntEntryTableInsideValidFih() {
         val cntOffset = 0x10100L
-        val file = writeFih("malformed-cnt-table.pkg", 0x10000L, 0x100L, cntOffset, 0x800L)
+        val file = writeFih("malformed-cnt-table.pkg", 0x10000L, 0x10000L, cntOffset, 0x800L)
         RandomAccessFile(file, "rw").use { raf ->
             // Two records at 0x7f0 cannot fit inside the declared 0x800-byte CNT.
             writeBe32(raf, cntOffset + 0x10L, 2)
@@ -98,7 +98,7 @@ class PkgProbeTest {
 
     @Test
     fun rejectsPfsRangeBeyondFile() {
-        val file = writeFih("truncated-pfs.pkg", 0x10000L, 0x10000L, 0x10100L, 0x5A0L)
+        val file = writeFih("truncated-pfs.pkg", 0x10000L, 0x20000L, 0x30000L, 0x5A0L, fileSizeOverride = 0x2ffff)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
@@ -110,25 +110,25 @@ class PkgProbeTest {
 
     @Test
     fun rejectsCntOverlappingPfsSegment() {
-        val file = writeFih("overlap.pkg", 0x10000L, 0x200L, 0x10100L, 0x5A0L)
+        val file = writeFih("overlap.pkg", 0x10000L, 0x20000L, 0x20000L, 0x5A0L)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsCntSegmentOutsideFile() {
-        val file = writeFih("cnt-outside.pkg", 0x10000L, 0x100L, 0x10100L, 0x1000L, fileSizeOverride = 0x10600)
+        val file = writeFih("cnt-outside.pkg", 0x10000L, 0x10000L, 0x20000L, 0x1000L, fileSizeOverride = 0x20500)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsCntSegmentShorterThanMinimumHeader() {
-        val file = writeFih("short-cnt.pkg", 0x10000L, 0x100L, 0x10100L, 0x100L)
+        val file = writeFih("short-cnt.pkg", 0x10000L, 0x10000L, 0x20000L, 0x100L)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsWrongCntMagic() {
-        val file = writeFih("wrong-cnt.pkg", 0x10000L, 0x100L, 0x10100L, 0x5A0L, cntMagic = "BAD")
+        val file = writeFih("wrong-cnt.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, cntMagic = "BAD")
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
@@ -168,6 +168,11 @@ class PkgProbeTest {
         putLe64(bytes, 0x18, pfsSize)
         putLe64(bytes, 0x58, cntOffset)
         putLe64(bytes, 0xA0, cntSize)
+        if (pfsOffset >= 0 && pfsOffset + 0x24L <= bytes.size.toLong()) {
+            putLe64(bytes, pfsOffset.toInt(), 2L)
+            putLe64(bytes, pfsOffset.toInt() + 0x08, 20130315L)
+            putLe32(bytes, pfsOffset.toInt() + 0x20, 0x10000L)
+        }
         if (cntOffset >= 0 && cntOffset + 4 <= bytes.size.toLong()) {
             putMagicAt(bytes, cntOffset.toInt(), cntMagic)
         }
@@ -191,6 +196,10 @@ class PkgProbeTest {
             (value ushr 8).toByte(),
             value.toByte(),
         ))
+    }
+
+    private fun putLe32(bytes: ByteArray, offset: Int, value: Long) {
+        for (i in 0 until 4) bytes[offset + i] = (value ushr (i * 8)).toByte()
     }
 
     private fun putLe64(bytes: ByteArray, offset: Int, value: Long) {
