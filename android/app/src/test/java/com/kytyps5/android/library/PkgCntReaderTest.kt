@@ -46,6 +46,19 @@ class PkgCntReaderTest {
     }
 
     @Test
+    fun doesNotDecodeEncryptedNameTableButKeepsOtherMetadata() {
+        val file = makeCnt("encrypted-names.cnt") { raf ->
+            writeBe32(raf, 0x5a0L + 0x08L, 0x80000000L)
+        }
+        val result = PkgCntReader.read(file, 0L, file.length())
+        assertNotNull(result)
+        assertTrue(result!!.entries[0].encrypted)
+        assertNull(result.entries[0].name)
+        assertNull(result.entries[1].name)
+        assertEquals("{\"title\":\"Synthetic\"}", result.paramJson)
+    }
+
+    @Test
     fun rejectsEntryTableOutsideCntSegment() {
         val file = makeCnt("table-outside.cnt") { raf ->
             writeBe32(raf, 0x18L, 0x7f0L)
