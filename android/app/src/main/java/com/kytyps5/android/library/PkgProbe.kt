@@ -11,7 +11,11 @@ import java.io.RandomAccessFile
  * segment's location, minimum header size, and magic. It does not parse,
  * decrypt, extract, or launch package content.
  */
-data class PkgProbeResult(val kind: Kind) {
+data class PkgProbeResult(
+    val kind: Kind,
+    val cntOffset: Long? = null,
+    val cntSize: Long? = null,
+) {
     enum class Kind {
         PS5_FIH,
         PS5_LIH,
@@ -51,6 +55,15 @@ object PkgProbe {
         }
     }
 
+    /** Parse only bounded CNT metadata from a validated FIH package. */
+    fun readMetadata(file: File): PkgCntMetadata? {
+        val result = probe(file)
+        if (result.kind != PkgProbeResult.Kind.PS5_FIH) return null
+        val offset = result.cntOffset ?: return null
+        val size = result.cntSize ?: return null
+        return PkgCntReader.read(file, offset, size)
+    }
+
     private fun probeFih(raf: RandomAccessFile, fileSize: Long): PkgProbeResult {
         if (fileSize < FIH_HEADER_SIZE) return malformed()
 
@@ -81,7 +94,7 @@ object PkgProbe {
             return malformed()
         }
 
-        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH)
+        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize)
     }
 
     private fun malformed() =
