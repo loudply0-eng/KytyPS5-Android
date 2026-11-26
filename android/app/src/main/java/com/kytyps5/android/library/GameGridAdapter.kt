@@ -48,7 +48,7 @@ class GameGridAdapter(
         val holder = view.tag as Holder
         val game = games[position]
         holder.title.text = game.title
-        holder.subtitle.text = game.titleId ?: if (game.folder.isFile) GameLibrary.imageLabel(game.folder) else ""
+        holder.subtitle.text = game.status ?: game.titleId ?: if (game.folder.isFile) GameLibrary.imageLabel(game.folder) else ""
         holder.placeholder.text = initials(game.title)
         holder.placeholder.visibility = View.GONE
         covers.load(game.icon, holder.cover) { holder.placeholder.visibility = View.VISIBLE }

@@ -9,7 +9,7 @@ object NativeLibrary {
 
     const val MISSING_MESSAGE =
         "Native library missing: $FILE_NAME is not in this build. " +
-            "Build the emulator to _Build/android/$FILE_NAME (or pass -PkytyNativeLib=<path>) and rebuild the app."
+            "Build the Android ARM64 engine and rebuild with -PkytyNativeDir=<native build directory>."
 
     /** With legacy packaging enabled the library is extracted to nativeLibraryDir. */
     fun isInstalled(context: Context): Boolean =

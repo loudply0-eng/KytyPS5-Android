@@ -139,7 +139,7 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16.dp, 16.dp, 16.dp, 16.dp)
-            addView(label("KytyPS5", sizeSp = 22f, bold = true))
+            addView(label("PS5 Game Hub", sizeSp = 22f, bold = true))
             addView(nativeStatus)
             addView(storageStatus)
             addView(grantButton)
@@ -305,6 +305,10 @@ class MainActivity : Activity() {
     }
 
     private fun launch(game: GameEntry) {
+        if (!game.launchable) {
+            showMessage(game.status ?: "This package is not currently launchable.")
+            return
+        }
         val options = LaunchOptions.resolve(
             globalResolution = settings.resolution,
             globalHud = settings.hudEnabled,

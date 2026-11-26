@@ -1,0 +1,193 @@
+name: Android Native Engine PR Validation
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "feat/**"
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  pull_request:
+    branches:
+      - android-boot-wip
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-native-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: 28.2.13676358
+
+jobs:
+  native:
+    name: Build ARM64 Kyty engine and package debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source and submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Free disk space and install host tools
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost
+          sudo apt-get update
+          sudo apt-get install -y ninja-build glslang-tools ccache
+          df -h /
+
+      - name: Set up Java 21
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Android NDK and SDK packages
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses
+          set -o pipefail
+          "$SDKMANAGER" --install "ndk;${NDK_VERSION}" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Restore native compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-android-native-${{ github.sha }}
+          restore-keys: ccache-android-native-
+
+      - name: Restore FFmpeg Android build
+        id: ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: _Build/ffmpeg-android/install
+          key: ffmpeg-android-${{ hashFiles('scripts/android/build-ffmpeg-android.sh') }}-${{ env.NDK_VERSION }}
+
+      - name: Build FFmpeg for Android
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK }}
+        run: bash scripts/android/build-ffmpeg-android.sh "$PWD/_Build/ffmpeg-android"
+
+      - name: Configure ARM64 Android native engine
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cmake -S . -B _Build/android -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-31 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DKYTY_GUEST_CPU_FEX=ON \
+            -DKYTY_BUILD_LAUNCHER=OFF \
+            -DFFMPEG_PREBUILT_DIR="$PWD/_Build/ffmpeg-android/install" \
+            -DKYTY_BUILD_ORIGIN=Fork \
+            -DKYTY_BUILD_REPOSITORY="$GITHUB_REPOSITORY" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Compile Kyty native engine and Android hooks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ccache --max-size=3G
+          ninja -C _Build/android kyty_emulator
+          test -s _Build/android/libmain.so
+          test -s _Build/android/3rdparty/SDL3/libSDL3.so
+          find _Build/android/3rdparty/libadrenotools/src/hook -maxdepth 1 -type f -name '*.so' -print -quit | grep -q .
+          ccache --show-stats
+
+      - name: Stage native libraries
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ST="$RUNNER_TEMP/native"
+          mkdir -p "$ST/3rdparty/SDL3" "$ST/3rdparty/libadrenotools/src/hook"
+          STRIP="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          "$STRIP" --strip-debug -o "$ST/libmain.so" _Build/android/libmain.so
+          cp _Build/android/3rdparty/SDL3/libSDL3.so "$ST/3rdparty/SDL3/"
+          cp _Build/android/3rdparty/libadrenotools/src/hook/*.so "$ST/3rdparty/libadrenotools/src/hook/"
+          test -s "$ST/libmain.so"
+          test -s "$ST/3rdparty/SDL3/libSDL3.so"
+          find "$ST/3rdparty/libadrenotools/src/hook" -maxdepth 1 -type f -name '*.so' -print
+
+      - name: Run Android tests and package native-enabled debug APK
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug \
+            -PkytyNativeDir="$RUNNER_TEMP/native" \
+            -PkytyBundleDrivers=false
+
+      - name: Verify native libraries are packaged for ARM64
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          CONTENTS="$(unzip -Z1 "$APK")"
+          for lib in libmain.so libSDL3.so libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            grep -Fx "lib/arm64-v8a/$lib" <<< "$CONTENTS"
+          done
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.ps5gamehub.android'"
+          sha256sum "$APK"
+
+      - name: Verify packaged ELF architecture and native dependencies
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          READELF="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          TMP="$RUNNER_TEMP/elf-check"
+          mkdir -p "$TMP"
+          for lib in libmain.so libSDL3.so libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            unzip -p "$APK" "lib/arm64-v8a/$lib" > "$TMP/$lib"
+            test -s "$TMP/$lib"
+            "$READELF" -h "$TMP/$lib" | grep -Eq 'Machine:.*AArch64'
+            echo "Verified ELF64/AArch64: $lib"
+          done
+          # Every DT_NEEDED must resolve either to another packaged library or to an
+          # explicitly allowed Android platform library. This catches missing SDL/hook
+          # dependencies before an APK reaches a device.
+          SYSTEM_LIBS='|libc.so|libm.so|libdl.so|liblog.so|libandroid.so|libOpenSLES.so|libGLESv1_CM.so|libGLESv2.so|'
+          for lib in libmain.so libSDL3.so libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            while IFS= read -r dependency; do
+              [[ -n "$dependency" ]] || continue
+              if [[ -s "$TMP/$dependency" ]]; then
+                echo "Resolved packaged dependency: $lib -> $dependency"
+                continue
+              fi
+              case "$SYSTEM_LIBS" in
+                *"|$dependency|"*) echo "Resolved Android platform dependency: $lib -> $dependency" ;;
+                *) echo "Unresolved native dependency: $lib -> $dependency" >&2; exit 1 ;;
+              esac
+            done < <("$READELF" -d "$TMP/$lib" | sed -n 's/.*Shared library: \\[\\(.*\\)\\].*/\\1/p')
+          done
+
+      - name: Upload native-enabled debug APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ps5-game-hub-native-arm64-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

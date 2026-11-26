@@ -2,6 +2,8 @@ package com.kytyps5.android
 
 import android.util.Log
 import com.kytyps5.android.library.ParamSfo
+import com.kytyps5.android.library.PkgProbe
+import com.kytyps5.android.library.PkgProbeResult
 import java.io.File
 import java.io.IOException
 import org.json.JSONException
@@ -10,7 +12,7 @@ import org.json.JSONObject
 /**
  * A game the emulator can load: an extracted dump folder (contains sce_sys/param.json) or a
  * dump image the emulator mounts read-only without extracting: a ZArchive file (*.zar) or an
- * exFAT disk image (*.exfat).
+ * exFAT disk image (*.exfat). PS5 PKG files are listed as metadata-only and cannot be launched.
  * [titleId] and [icon] (sce_sys/icon0.png) are known for extracted folders only.
  */
 data class GameEntry(
@@ -18,6 +20,8 @@ data class GameEntry(
     val title: String,
     val titleId: String? = null,
     val icon: File? = null,
+    val launchable: Boolean = true,
+    val status: String? = null,
 ) {
     val path: String get() = folder.absolutePath
 }
@@ -36,6 +40,7 @@ object GameLibrary {
     private const val MAX_PARAM_JSON_BYTES = 1024 * 1024
     const val ZARCHIVE_EXTENSION = "zar"
     const val EXFAT_EXTENSION = "exfat"
+    const val PKG_EXTENSION = "pkg"
     private val IMAGE_EXTENSIONS = setOf(ZARCHIVE_EXTENSION, EXFAT_EXTENSION)
 
     /** Subtitle for a dump image in the grid; empty for anything else. */
@@ -69,9 +74,30 @@ object GameLibrary {
         children
             .filter { it.isFile && it.extension.lowercase() in IMAGE_EXTENSIONS }
             .mapTo(into) { GameEntry(folder = it, title = it.nameWithoutExtension) }
+        children
+            .filter { it.isFile && it.extension.equals(PKG_EXTENSION, ignoreCase = true) }
+            .mapNotNullTo(into) { readPkgEntry(it) }
         if (depth >= MAX_SCAN_DEPTH) return
         children.filter { it.isDirectory && !it.name.startsWith(".") }
             .forEach { collect(it, depth + 1, into) }
+    }
+
+    private fun readPkgEntry(file: File): GameEntry? {
+        val probe = PkgProbe.probe(file)
+        if (probe.kind != PkgProbeResult.Kind.PS5_FIH) return null
+        val metadata = PkgProbe.readMetadata(file) ?: return null
+        val json = metadata.paramJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val title = json?.let { titleFromParamJson(it, "") }?.ifEmpty { null }
+            ?: file.nameWithoutExtension
+        val titleId = json?.stringOr("titleId")?.trim()?.ifEmpty { null }
+        return GameEntry(
+            folder = file,
+            title = title,
+            titleId = titleId,
+            icon = null,
+            launchable = false,
+            status = "PKG metadata • not installable",
+        )
     }
 
     private fun isGameFolder(folder: File): Boolean = File(folder, PARAM_JSON).isFile
