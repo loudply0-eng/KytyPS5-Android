@@ -27,32 +27,50 @@ class PkgProbeTest {
     }
 
     @Test
-    fun recognizesFihWithCanonicalPfsOffsetAndValidRange() {
-        val file = writeFih("valid.pkg", 0x10000L, 0x100L, 0x10100)
+    fun recognizesFihWithValidPfsAndCntSegments() {
+        val file = writeFih("valid.pkg", 0x10000L, 0x100L, 0x10100L, 0x5A0L)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsNonCanonicalPfsOffset() {
-        val file = writeFih("wrong-offset.pkg", 0x10001L, 0xFFL, 0x10100)
+        val file = writeFih("wrong-offset.pkg", 0x10001L, 0xFFL, 0x10100L, 0x5A0L)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsPfsRangeBeyondFile() {
-        val file = writeFih("truncated-pfs.pkg", 0x10000L, 0x200L, 0x10100)
+        val file = writeFih("truncated-pfs.pkg", 0x10000L, 0x200L, 0x10100L, 0x5A0L)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
     fun rejectsEmptyPfsRange() {
-        val file = writeFih("empty-pfs.pkg", 0x10000L, 0L, 0x10000)
+        val file = writeFih("empty-pfs.pkg", 0x10000L, 0L, 0x10000L, 0x5A0L)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
-    fun rejectsPfsRangeOverlappingFihHeader() {
-        val file = writeFih("header-overlap.pkg", 0x80L, 0x40L, 0x10100)
+    fun rejectsCntOverlappingPfsSegment() {
+        val file = writeFih("overlap.pkg", 0x10000L, 0x200L, 0x10100L, 0x5A0L)
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+    }
+
+    @Test
+    fun rejectsCntSegmentOutsideFile() {
+        val file = writeFih("cnt-outside.pkg", 0x10000L, 0x100L, 0x10100L, 0x1000L)
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+    }
+
+    @Test
+    fun rejectsCntSegmentShorterThanMinimumHeader() {
+        val file = writeFih("short-cnt.pkg", 0x10000L, 0x100L, 0x10100L, 0x100L)
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+    }
+
+    @Test
+    fun rejectsWrongCntMagic() {
+        val file = writeFih("wrong-cnt.pkg", 0x10000L, 0x100L, 0x10100L, 0x5A0L, cntMagic = "BAD")
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
@@ -74,19 +92,34 @@ class PkgProbeTest {
         assertEquals(PkgProbeResult.Kind.PS5_LIH, PkgProbe.probe(file).kind)
     }
 
-    private fun writeFih(name: String, offset: Long, size: Long, fileSize: Int): File {
+    private fun writeFih(
+        name: String,
+        pfsOffset: Long,
+        pfsSize: Long,
+        cntOffset: Long,
+        cntSize: Long,
+        cntMagic: String = "CNT",
+    ): File {
+        val fileSize = (cntOffset + cntSize).coerceAtLeast(0x10000L).toInt()
         val bytes = ByteArray(fileSize)
         putMagic(bytes, "FIH")
-        putLe64(bytes, 0x10, offset)
-        putLe64(bytes, 0x18, size)
+        putLe64(bytes, 0x10, pfsOffset)
+        putLe64(bytes, 0x18, pfsSize)
+        putLe64(bytes, 0x58, cntOffset)
+        putLe64(bytes, 0xA0, cntSize)
+        if (cntOffset >= 0 && cntOffset + 4 <= bytes.size) {
+            putMagicAt(bytes, cntOffset.toInt(), cntMagic)
+        }
         return File(root, name).apply { writeBytes(bytes) }
     }
 
-    private fun putMagic(bytes: ByteArray, suffix: String) {
-        bytes[0] = 0x7f
-        bytes[1] = suffix[0].code.toByte()
-        bytes[2] = suffix[1].code.toByte()
-        bytes[3] = suffix[2].code.toByte()
+    private fun putMagic(bytes: ByteArray, suffix: String) = putMagicAt(bytes, 0, suffix)
+
+    private fun putMagicAt(bytes: ByteArray, offset: Int, suffix: String) {
+        bytes[offset] = 0x7f
+        bytes[offset + 1] = suffix[0].code.toByte()
+        bytes[offset + 2] = suffix[1].code.toByte()
+        bytes[offset + 3] = suffix[2].code.toByte()
     }
 
     private fun putLe64(bytes: ByteArray, offset: Int, value: Long) {
