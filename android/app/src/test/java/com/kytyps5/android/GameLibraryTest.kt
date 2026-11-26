@@ -82,19 +82,21 @@ class GameLibraryTest {
         File(root, "Beta Game.exfat").writeText("exfat")
         File(root, "ALPHA.EXFAT").writeText("exfat")
         File(root, "Gamma.zar").writeText("zar")
-        File(root, "raw-disk.img").writeText("img") // only *.exfat is listed; .img is opened by path
+        File(root, "raw-disk.img").writeBytes(validRawExfatImage())
+        File(root, "not-a-disk.img").writeText("not an exFAT image")
 
         val result = GameLibrary.scan(root) as ScanResult.Found
 
-        assertEquals(listOf("ALPHA", "Beta Game", "Gamma", "Middle"), result.games.map { it.title })
+        assertEquals(listOf("ALPHA", "Beta Game", "Gamma", "Middle", "raw-disk"), result.games.map { it.title })
         assertEquals(File(root, "Beta Game.exfat").absolutePath, result.games[1].path)
+        assertEquals("exFAT disk image", GameLibrary.imageLabel(File("raw-disk.img")))
     }
 
     @Test
     fun imageLabelNamesEachImageFormat() {
         assertEquals("ZArchive", GameLibrary.imageLabel(File("a.zar")))
         assertEquals("exFAT image", GameLibrary.imageLabel(File("a.EXFAT")))
-        assertEquals("", GameLibrary.imageLabel(File("a.img")))
+        assertEquals("exFAT disk image", GameLibrary.imageLabel(File("a.img")))
     }
 
     @Test
@@ -154,6 +156,29 @@ class GameLibraryTest {
         assertEquals("From SFO", game.title)
         assertEquals("CUSA00001", game.titleId)
         assertEquals(null, game.icon)
+    }
+
+    private fun validRawExfatImage(): ByteArray {
+        val image = ByteArray(512 * 100)
+        "EXFAT   ".toByteArray(Charsets.US_ASCII).copyInto(image, destinationOffset = 3)
+        fun put32(offset: Int, value: Int) {
+            for (i in 0 until 4) image[offset + i] = (value ushr (8 * i)).toByte()
+        }
+        fun put64(offset: Int, value: Long) {
+            for (i in 0 until 8) image[offset + i] = (value ushr (8 * i)).toByte()
+        }
+        put64(72, 100L)
+        put32(80, 24)
+        put32(84, 1)
+        put32(88, 25)
+        put32(92, 1)
+        put32(96, 2)
+        image[108] = 9
+        image[109] = 0
+        image[110] = 1
+        image[510] = 0x55
+        image[511] = 0xAA.toByte()
+        return image
     }
 
     private fun makeGame(folderName: String, paramJson: String?) {
