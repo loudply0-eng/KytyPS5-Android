@@ -84,7 +84,11 @@ object PkgCntReader {
                     }
                 }
 
+                // An encrypted name table is valid metadata we cannot decode. Keep the
+                // package entry list, but leave names unavailable instead of treating ciphertext
+                // as UTF-8 or rejecting the entire CNT segment.
                 val nameBytes = namesEntry?.let {
+                    if ((it.flags1 and 0x80000000L) != 0L) return@let null
                     if (it.dataSize <= 0L || it.dataSize > MAX_NAME_TABLE_SIZE) return null
                     readBytes(raf, cntOffset + it.dataOffset, it.dataSize.toInt())
                 }
