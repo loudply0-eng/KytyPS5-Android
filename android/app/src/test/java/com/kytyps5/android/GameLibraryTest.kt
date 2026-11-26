@@ -1,6 +1,7 @@
 package com.kytyps5.android
 
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import org.json.JSONObject
 import org.junit.After
@@ -169,6 +170,28 @@ class GameLibraryTest {
         assertEquals("PKG metadata • not installable", result.games.single().status)
     }
 
+
+
+    @Test
+    fun scanIgnoresArbitraryFilesNamedPkg() {
+        File(root, "not-a-package.pkg").writeBytes(ByteArray(256) { 0x41 })
+        File(root, "another.pkg").writeText("not a PS5 package")
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertTrue(result.games.isEmpty())
+    }
+
+    @Test
+    fun scanIgnoresFihWhenCntSegmentIsMalformed() {
+        val pkg = makeMetadataPkg("broken-cnt.pkg", """{"titleName":"Must Not Appear"}""")
+        RandomAccessFile(pkg, "rw").use { raf ->
+            raf.seek(0x20000L)
+            raf.write(byteArrayOf(0x7f, 0x42, 0x41, 0x44))
+        }
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertTrue(result.games.isEmpty())
+    }
 
     private fun makeMetadataPkg(name: String, paramJson: String): File {
         val cntOffset = 0x20000
