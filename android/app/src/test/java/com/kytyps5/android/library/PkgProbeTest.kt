@@ -71,6 +71,36 @@ class PkgProbeTest {
     }
 
     @Test
+    fun rejectsEmptyPfsRange() {
+        val file = File(root, "empty-pfs.pkg")
+        val bytes = ByteArray(0x100)
+        bytes[0] = 0x7f
+        bytes[1] = 'F'.code.toByte()
+        bytes[2] = 'I'.code.toByte()
+        bytes[3] = 'H'.code.toByte()
+        putLe64(bytes, 0x10, 0x80)
+        putLe64(bytes, 0x18, 0)
+        file.writeBytes(bytes)
+
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+    }
+
+    @Test
+    fun rejectsPfsRangeOverlappingFihHeader() {
+        val file = File(root, "header-overlap.pkg")
+        val bytes = ByteArray(0x100)
+        bytes[0] = 0x7f
+        bytes[1] = 'F'.code.toByte()
+        bytes[2] = 'I'.code.toByte()
+        bytes[3] = 'H'.code.toByte()
+        putLe64(bytes, 0x10, 0x10)
+        putLe64(bytes, 0x18, 0x40)
+        file.writeBytes(bytes)
+
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+    }
+
+    @Test
     fun truncatedFihIsMalformed() {
         val file = File(root, "truncated.pkg")
         file.writeBytes(byteArrayOf(0x7f, 'F'.code.toByte(), 'I'.code.toByte(), 'H'.code.toByte()))
