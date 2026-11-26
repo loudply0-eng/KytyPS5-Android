@@ -23,6 +23,7 @@ data class PkgCntMetadata(
         val id: Long,
         val name: String?,
         val dataSize: Long,
+        val encrypted: Boolean,
     )
 }
 
@@ -94,10 +95,11 @@ object PkgCntReader {
                     } else {
                         readName(nameBytes, entry.nameOffset) ?: return null
                     }
-                    PkgCntMetadata.Entry(entry.id, name, entry.dataSize)
+                    PkgCntMetadata.Entry(entry.id, name, entry.dataSize, (entry.flags1 and 0x80000000L) != 0L)
                 }
 
                 val paramJson = paramEntry?.let {
+                    if ((it.flags1 and 0x80000000L) != 0L) return@let null
                     if (it.dataSize <= 0L || it.dataSize > MAX_PARAM_JSON_SIZE) return null
                     val bytes = readBytes(raf, cntOffset + it.dataOffset, it.dataSize.toInt())
                     decodeUtf8(bytes) ?: return null
