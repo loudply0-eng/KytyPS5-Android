@@ -166,7 +166,23 @@ jobs:
             "$READELF" -h "$TMP/$lib" | grep -Eq 'Machine:.*AArch64'
             echo "Verified ELF64/AArch64: $lib"
           done
-          "$READELF" -d "$TMP/libmain.so" | grep -E 'NEEDED|SONAME' || true
+          # Every DT_NEEDED must resolve either to another packaged library or to an
+          # explicitly allowed Android platform library. This catches missing SDL/hook
+          # dependencies before an APK reaches a device.
+          SYSTEM_LIBS='|libc.so|libm.so|libdl.so|liblog.so|libandroid.so|libOpenSLES.so|libGLESv1_CM.so|libGLESv2.so|'
+          for lib in libmain.so libSDL3.so libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            while IFS= read -r dependency; do
+              [[ -n "$dependency" ]] || continue
+              if [[ -s "$TMP/$dependency" ]]; then
+                echo "Resolved packaged dependency: $lib -> $dependency"
+                continue
+              fi
+              case "$SYSTEM_LIBS" in
+                *"|$dependency|"*) echo "Resolved Android platform dependency: $lib -> $dependency" ;;
+                *) echo "Unresolved native dependency: $lib -> $dependency" >&2; exit 1 ;;
+              esac
+            done < <("$READELF" -d "$TMP/$lib" | sed -n 's/.*Shared library: \\[\\(.*\\)\\].*/\\1/p')
+          done
 
       - name: Upload native-enabled debug APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
