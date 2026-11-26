@@ -156,6 +156,19 @@ class GameLibraryTest {
         assertEquals(null, game.icon)
     }
 
+
+    @Test
+    fun scanListsValidatedPkgAsMetadataOnlyEntry() {
+        val pkg = makeMetadataPkg("ASTRO.pkg", """{"titleName":"ASTRO BOT","titleId":"PPSA21567"}""")
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertEquals(listOf("ASTRO BOT"), result.games.map { it.title })
+        assertEquals(pkg.absolutePath, result.games.single().path)
+        assertEquals("PPSA21567", result.games.single().titleId)
+        assertTrue(!result.games.single().launchable)
+        assertEquals("PKG metadata • not installable", result.games.single().status)
+    }
+
     private fun makeGame(folderName: String, paramJson: String?) {
         val folder = File(root, folderName)
         File(folder, "sce_sys").mkdirs()
