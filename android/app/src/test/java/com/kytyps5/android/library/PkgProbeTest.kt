@@ -70,6 +70,19 @@ class PkgProbeTest {
     }
 
     @Test
+    fun readMetadataRejectsMalformedCntEntryTableInsideValidFih() {
+        val cntOffset = 0x10100L
+        val file = writeFih("malformed-cnt-table.pkg", 0x10000L, 0x100L, cntOffset, 0x800L)
+        RandomAccessFile(file, "rw").use { raf ->
+            // Two records at 0x7f0 cannot fit inside the declared 0x800-byte CNT.
+            writeBe32(raf, cntOffset + 0x10L, 2)
+            writeBe32(raf, cntOffset + 0x18L, 0x7f0)
+        }
+
+        assertEquals(null, PkgProbe.readMetadata(file))
+    }
+
+    @Test
     fun rejectsNonCanonicalPfsOffset() {
         val file = writeFih("wrong-offset.pkg", 0x10001L, 0xFFL, 0x10100L, 0x5A0L)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
