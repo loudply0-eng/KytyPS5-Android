@@ -7,8 +7,9 @@ import java.io.RandomAccessFile
 /**
  * Conservative PS5 package probe.
  *
- * It recognizes known outer-container signatures and validates the documented
- * FIH PFS segment bounds. It does not parse, decrypt, extract, or launch content.
+ * It validates the FIH header, PFS segment bounds, and the embedded CNT
+ * segment's location, minimum header size, and magic. It does not parse,
+ * decrypt, extract, or launch package content.
  */
 data class PkgProbeResult(val kind: Kind) {
     enum class Kind {
@@ -24,9 +25,11 @@ object PkgProbe {
     private const val FIH_HEADER_SIZE = 0x10000L
     private const val FIH_PFS_OFFSET_FIELD = 0x10L
     private const val FIH_PFS_SIZE_FIELD = 0x18L
+    private const val FIH_CNT_OFFSET_FIELD = 0x58L
+    private const val FIH_CNT_SIZE_FIELD = 0xA0L
     private const val REQUIRED_PFS_OFFSET = 0x10000L
+    private const val CNT_HEADER_MIN_SIZE = 0x5A0L
 
-    /** Probe a package without reading its payload into memory. */
     fun probe(file: File): PkgProbeResult {
         if (!file.isFile || file.length() < MAGIC_SIZE) {
             return PkgProbeResult(PkgProbeResult.Kind.NOT_PS5_PKG)
@@ -38,7 +41,7 @@ object PkgProbe {
                 raf.readFully(magic)
                 when (String(magic, Charsets.US_ASCII)) {
                     "\u007fFIH" -> probeFih(raf, file.length())
-                    // LIH is signature recognition only; its layout is not validated.
+                    // LIH is signature recognition only; its internal layout is unknown here.
                     "\u007fLIH" -> PkgProbeResult(PkgProbeResult.Kind.PS5_LIH)
                     else -> PkgProbeResult(PkgProbeResult.Kind.NOT_PS5_PKG)
                 }
@@ -49,24 +52,40 @@ object PkgProbe {
     }
 
     private fun probeFih(raf: RandomAccessFile, fileSize: Long): PkgProbeResult {
-        if (fileSize < FIH_HEADER_SIZE) {
-            return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
-        }
+        if (fileSize < FIH_HEADER_SIZE) return malformed()
 
         raf.seek(FIH_PFS_OFFSET_FIELD)
         val pfsOffset = readLe64(raf)
         raf.seek(FIH_PFS_SIZE_FIELD)
         val pfsSize = readLe64(raf)
+        raf.seek(FIH_CNT_OFFSET_FIELD)
+        val cntOffset = readLe64(raf)
+        raf.seek(FIH_CNT_SIZE_FIELD)
+        val cntSize = readLe64(raf)
 
-        // FIH places the PFS image immediately after its fixed 64 KiB header.
-        // Subtraction-based bounds checking avoids offset + size overflow.
+        // FIH has a fixed 64 KiB header followed by PFS, CNT (SC), then SI.
         if (pfsOffset != REQUIRED_PFS_OFFSET || pfsSize <= 0L ||
             !rangeFits(pfsOffset, pfsSize, fileSize)
-        ) {
-            return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
+        ) return malformed()
+
+        // rangeFits proves this addition cannot overflow.
+        val pfsEnd = pfsOffset + pfsSize
+        if (cntOffset < pfsEnd || cntSize < CNT_HEADER_MIN_SIZE ||
+            !rangeFits(cntOffset, cntSize, fileSize)
+        ) return malformed()
+
+        raf.seek(cntOffset)
+        val cntMagic = ByteArray(MAGIC_SIZE)
+        raf.readFully(cntMagic)
+        if (!cntMagic.contentEquals(byteArrayOf(0x7f, 'C'.code.toByte(), 'N'.code.toByte(), 'T'.code.toByte()))) {
+            return malformed()
         }
+
         return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH)
     }
+
+    private fun malformed() =
+        PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
 
     private fun rangeFits(offset: Long, size: Long, containerSize: Long): Boolean {
         if (offset < 0L || size < 0L || containerSize < 0L) return false
