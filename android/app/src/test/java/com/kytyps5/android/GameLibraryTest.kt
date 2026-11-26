@@ -169,6 +169,64 @@ class GameLibraryTest {
         assertEquals("PKG metadata • not installable", result.games.single().status)
     }
 
+
+    private fun makeMetadataPkg(name: String, paramJson: String): File {
+        val cntOffset = 0x20000
+        val cntSize = 0x800
+        val bytes = ByteArray(cntOffset + cntSize)
+        putMagic(bytes, 0, "FIH")
+        putLe64(bytes, 0x10, 0x10000L)
+        putLe64(bytes, 0x18, 0x10000L)
+        putLe64(bytes, 0x58, cntOffset.toLong())
+        putLe64(bytes, 0xa0, cntSize.toLong())
+
+        // Plaintext outer PFS superblock identifiers used by the conservative probe.
+        putLe64(bytes, 0x10000, 2L)
+        putLe64(bytes, 0x10008, 20130315L)
+        putLe32(bytes, 0x10020, 0x10000L)
+
+        putMagic(bytes, cntOffset, "CNT")
+        putBe32(bytes, cntOffset + 0x10, 2L)
+        putBe32(bytes, cntOffset + 0x18, 0x5a0L)
+
+        // Entry 0: entry-name table.
+        putBe32(bytes, cntOffset + 0x5a0, 0x0200L)
+        putBe32(bytes, cntOffset + 0x5a0 + 0x10, 0x700L)
+        val names = byteArrayOf(0) + "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+        putBe32(bytes, cntOffset + 0x5a0 + 0x14, names.size.toLong())
+
+        // Entry 1: plaintext param.json.
+        val json = paramJson.toByteArray(Charsets.UTF_8)
+        putBe32(bytes, cntOffset + 0x5c0, 0x2000L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x04, 1L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x10, 0x740L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x14, json.size.toLong())
+        names.copyInto(bytes, cntOffset + 0x700)
+        json.copyInto(bytes, cntOffset + 0x740)
+
+        return File(root, name).apply { writeBytes(bytes) }
+    }
+
+    private fun putMagic(bytes: ByteArray, offset: Int, magic: String) {
+        bytes[offset] = 0x7f
+        magic.forEachIndexed { index, char -> bytes[offset + index + 1] = char.code.toByte() }
+    }
+
+    private fun putLe64(bytes: ByteArray, offset: Int, value: Long) {
+        repeat(8) { index -> bytes[offset + index] = (value ushr (index * 8)).toByte() }
+    }
+
+    private fun putLe32(bytes: ByteArray, offset: Int, value: Long) {
+        repeat(4) { index -> bytes[offset + index] = (value ushr (index * 8)).toByte() }
+    }
+
+    private fun putBe32(bytes: ByteArray, offset: Int, value: Long) {
+        bytes[offset] = (value ushr 24).toByte()
+        bytes[offset + 1] = (value ushr 16).toByte()
+        bytes[offset + 2] = (value ushr 8).toByte()
+        bytes[offset + 3] = value.toByte()
+    }
+
     private fun makeGame(folderName: String, paramJson: String?) {
         val folder = File(root, folderName)
         File(folder, "sce_sys").mkdirs()
