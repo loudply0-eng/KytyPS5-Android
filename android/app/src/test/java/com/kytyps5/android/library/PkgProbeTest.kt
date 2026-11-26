@@ -40,7 +40,7 @@ class PkgProbeTest {
 
     @Test
     fun rejectsPfsRangeBeyondFile() {
-        val file = writeFih("truncated-pfs.pkg", 0x10000L, 0x200L, 0x10100L, 0x5A0L)
+        val file = writeFih("truncated-pfs.pkg", 0x10000L, 0x10000L, 0x10100L, 0x5A0L)
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
