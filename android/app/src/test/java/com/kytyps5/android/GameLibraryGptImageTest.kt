@@ -30,6 +30,25 @@ class GameLibraryGptImageTest {
         assertEquals("exFAT disk image", GameLibrary.imageLabel(result.games.single().folder))
     }
 
+    @Test
+    fun ignoresGptHeaderWithOverflowingPartitionArrayOffset() {
+        val disk = ByteArray(1024)
+        disk[446 + 4] = 0xEE.toByte()
+        disk[510] = 0x55
+        disk[511] = 0xAA.toByte()
+        val header = 512
+        "EFI PART".toByteArray(Charsets.US_ASCII).copyInto(disk, header)
+        val badLba = Long.MAX_VALUE / 512L + 1L
+        for (i in 0 until 8) disk[header + 72 + i] = (badLba ushr (8 * i)).toByte()
+        disk[header + 80] = 1
+        disk[header + 84] = 128
+
+        File(root, "malformed-gpt.img").writeBytes(disk)
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertEquals(emptyList<String>(), result.games.map { it.title })
+    }
+
     private fun gptDiskWithExfatPartition(): ByteArray {
         val partitionStartLba = 2048
         val volumeSectors = 100
