@@ -102,7 +102,7 @@ object GameLibrary {
             fun u64(bytes: ByteArray, offset: Int): Long =
                 ByteBuffer.wrap(bytes, offset, 8).order(ByteOrder.LITTLE_ENDIAN).long
 
-            fun validBoot(sector: ByteArray?): Boolean {
+            fun validBoot(sector: ByteArray?, base: Long): Boolean {
                 if (sector == null || String(sector, 3, 8, Charsets.US_ASCII) != "EXFAT   ") return false
                 if (sector[510] != 0x55.toByte() || sector[511] != 0xAA.toByte()) return false
                 if ((11 until 64).any { sector[it] != 0.toByte() }) return false
@@ -123,17 +123,17 @@ object GameLibrary {
                 val heapEnd = heapOffset + (clusterCount shl clusterShift)
                 if (heapEnd < heapOffset || heapEnd > volumeLength) return false
                 val sectorBytes = 1L shl bytesShift
-                return volumeLength <= image.length() / sectorBytes
+                return base >= 0L && base <= image.length() && volumeLength <= (image.length() - base) / sectorBytes
             }
 
-            if (validBoot(readSector(0))) return true
+            if (validBoot(readSector(0), 0L)) return true
             val mbr = readSector(0) ?: return@use false
             if (mbr[510] != 0x55.toByte() || mbr[511] != 0xAA.toByte()) return@use false
             for (index in 0 until 4) {
                 val entry = 446 + index * 16
                 if ((mbr[entry + 4].toInt() and 0xFF) != 0) {
                     val lba = u32(mbr, entry + 8)
-                    if (lba > 0L && validBoot(readSector(lba))) return true
+                    if (lba > 0L && validBoot(readSector(lba), lba * 512L)) return true
                 }
             }
             val gpt = readSector(1) ?: return@use false
@@ -149,7 +149,7 @@ object GameLibrary {
                 val entry = ByteArray(128)
                 image.readFully(entry)
                 val firstLba = u64(entry, 32)
-                if (firstLba > 0L && validBoot(readSector(firstLba))) return true
+                if (firstLba > 0L && validBoot(readSector(firstLba), firstLba * 512L)) return true
             }
                 false
             }
