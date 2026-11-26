@@ -34,7 +34,7 @@ class GameLibraryGptImageTest {
     fun ignoresGptHeaderWithOverflowingPartitionArrayOffset() {
         val disk = ByteArray(1024)
         disk[446 + 4] = 0xEE.toByte()
-        disk[510] = 0x55
+        disk[510] = 0x55.toByte()
         disk[511] = 0xAA.toByte()
         val header = 512
         "EFI PART".toByteArray(Charsets.US_ASCII).copyInto(disk, header)
@@ -64,7 +64,7 @@ class GameLibraryGptImageTest {
         // Protective MBR.
         disk[446 + 4] = 0xEE.toByte()
         put32(disk, 446 + 8, 1)
-        disk[510] = 0x55
+        disk[510] = 0x55.toByte()
         disk[511] = 0xAA.toByte()
 
         // GPT header at LBA 1. The scanner validates the signature and entry geometry.
@@ -76,7 +76,7 @@ class GameLibraryGptImageTest {
 
         // One partition entry at LBA 2, with its first LBA at byte offset 32.
         val entry = 2 * 512
-        disk[entry] = 1 // non-empty type GUID
+        disk[entry] = 1.toByte() // non-empty type GUID
         put64(disk, entry + 32, partitionStartLba.toLong())
 
         // Minimal structurally valid exFAT boot sector at the partition start.
@@ -89,8 +89,8 @@ class GameLibraryGptImageTest {
         put32(disk, boot + 92, 1)
         put32(disk, boot + 96, 2)
         disk[boot + 108] = 9
-        disk[boot + 109] = 0
-        disk[boot + 110] = 1
+        disk[boot + 109] = 0.toByte()
+        disk[boot + 110] = 1.toByte()
         disk[boot + 510] = 0x55
         disk[boot + 511] = 0xAA.toByte()
 
