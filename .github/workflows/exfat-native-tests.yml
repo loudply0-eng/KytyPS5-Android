@@ -1,0 +1,64 @@
+name: Native exFAT image tests
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "feat/**"
+    paths:
+      - "src/common/exfatImage.cpp"
+      - "src/common/exfatImage.h"
+      - "src/common/archiveReader.h"
+      - "tests/ExfatImageTests.cpp"
+      - "tests/ExfatImageFixture.h"
+      - ".github/workflows/exfat-native-tests.yml"
+  pull_request:
+    branches:
+      - android-boot-wip
+    paths:
+      - "src/common/exfatImage.cpp"
+      - "src/common/exfatImage.h"
+      - "src/common/archiveReader.h"
+      - "tests/ExfatImageTests.cpp"
+      - "tests/ExfatImageFixture.h"
+      - ".github/workflows/exfat-native-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exfat-native-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exfat-native:
+    name: Build and run native exFAT tests (ASan/UBSan)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify compiler
+        run: |
+          g++ --version
+          test -f tests/ExfatImageFixture.h
+
+      - name: Compile native exFAT tests with sanitizers
+        run: |
+          set -Eeuo pipefail
+          g++ -std=c++20 -O1 -g \
+            -Wall -Wextra -Wpedantic \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Isrc -Itests \
+            tests/ExfatImageTests.cpp src/common/exfatImage.cpp \
+            -o exfat_image_tests
+
+      - name: Run native exFAT tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ./exfat_image_tests
