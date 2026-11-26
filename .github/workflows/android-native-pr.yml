@@ -151,6 +151,23 @@ jobs:
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.ps5gamehub.android'"
           sha256sum "$APK"
 
+      - name: Verify packaged ELF architecture and native dependencies
+        working-directory: android
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          READELF="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          TMP="$RUNNER_TEMP/elf-check"
+          mkdir -p "$TMP"
+          for lib in libmain.so libSDL3.so libhook_impl.so libmain_hook.so libfile_redirect_hook.so libgsl_alloc_hook.so; do
+            unzip -p "$APK" "lib/arm64-v8a/$lib" > "$TMP/$lib"
+            test -s "$TMP/$lib"
+            "$READELF" -h "$TMP/$lib" | grep -Eq 'Machine:.*AArch64'
+            echo "Verified ELF64/AArch64: $lib"
+          done
+          "$READELF" -d "$TMP/libmain.so" | grep -E 'NEEDED|SONAME' || true
+
       - name: Upload native-enabled debug APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
