@@ -83,11 +83,12 @@ class GameLibraryTest {
         File(root, "ALPHA.EXFAT").writeText("exfat")
         File(root, "Gamma.zar").writeText("zar")
         File(root, "raw-disk.img").writeBytes(validRawExfatImage())
+        File(root, "partitioned-disk.img").writeBytes(wrapInMbrExfatImage(validRawExfatImage()))
         File(root, "not-a-disk.img").writeText("not an exFAT image")
 
         val result = GameLibrary.scan(root) as ScanResult.Found
 
-        assertEquals(listOf("ALPHA", "Beta Game", "Gamma", "Middle", "raw-disk"), result.games.map { it.title })
+        assertEquals(listOf("ALPHA", "Beta Game", "Gamma", "Middle", "partitioned-disk", "raw-disk"), result.games.map { it.title })
         assertEquals(File(root, "Beta Game.exfat").absolutePath, result.games[1].path)
         assertEquals("exFAT disk image", GameLibrary.imageLabel(File("raw-disk.img")))
     }
@@ -179,6 +180,18 @@ class GameLibraryTest {
         image[510] = 0x55
         image[511] = 0xAA.toByte()
         return image
+    }
+
+    private fun wrapInMbrExfatImage(volume: ByteArray): ByteArray {
+        val firstPartitionLba = 2048
+        val disk = ByteArray(firstPartitionLba * 512 + volume.size)
+        disk[446 + 4] = 0x07
+        val lba = firstPartitionLba
+        for (i in 0 until 4) disk[446 + 8 + i] = (lba ushr (8 * i)).toByte()
+        disk[510] = 0x55
+        disk[511] = 0xAA.toByte()
+        volume.copyInto(disk, destinationOffset = firstPartitionLba * 512)
+        return disk
     }
 
     private fun makeGame(folderName: String, paramJson: String?) {
