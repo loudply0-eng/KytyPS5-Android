@@ -142,9 +142,12 @@ object GameLibrary {
             val entryCount = minOf(u32(gpt, 80), 128L).toInt()
             val entryBytes = u32(gpt, 84)
             if (entriesLba < 0L || entryBytes !in 128L..512L) return@use false
+            // Bound the LBA before multiplying: a malformed GPT can otherwise overflow Long.
+            if (entriesLba > (image.length() - 128L) / 512L) return@use false
+            val entriesOffset = entriesLba * 512L
             for (index in 0 until entryCount) {
-                val offset = entriesLba * 512L + index.toLong() * entryBytes
-                if (offset < 0L || offset > image.length() - 128L) break
+                val offset = entriesOffset + index.toLong() * entryBytes
+                if (offset < entriesOffset || offset > image.length() - 128L) break
                 image.seek(offset)
                 val entry = ByteArray(128)
                 image.readFully(entry)
