@@ -41,6 +41,8 @@ object PkgProbe {
 
                 when (String(magic, Charsets.US_ASCII)) {
                     "\u007fFIH" -> probeFih(raf, file.length())
+                    // LIH is a recognized patch-container signature only. Its
+                    // internal layout is intentionally not claimed as validated.
                     "\u007fLIH" -> PkgProbeResult(PkgProbeResult.Kind.PS5_LIH)
                     else -> PkgProbeResult(PkgProbeResult.Kind.NOT_PS5_PKG)
                 }
@@ -60,7 +62,11 @@ object PkgProbe {
         raf.seek(FIH_PFS_SIZE)
         val pfsSize = readLe64(raf)
 
-        if (!rangeFits(pfsOffset, pfsSize, fileSize)) {
+        // A PFS region must be non-empty, begin after the fixed FIH header,
+        // and fit using subtraction so offset + size cannot overflow.
+        if (pfsOffset < FIH_HEADER_MIN_SIZE || pfsSize <= 0L ||
+            !rangeFits(pfsOffset, pfsSize, fileSize)
+        ) {
             return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
         }
 
