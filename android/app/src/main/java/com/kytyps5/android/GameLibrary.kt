@@ -40,7 +40,6 @@ object GameLibrary {
     const val ZARCHIVE_EXTENSION = "zar"
     const val EXFAT_EXTENSION = "exfat"
     const val IMG_EXTENSION = "img"
-    private val IMAGE_EXTENSIONS = setOf(ZARCHIVE_EXTENSION, EXFAT_EXTENSION, IMG_EXTENSION)
 
     /** Subtitle for a dump image in the grid; empty for anything else. */
     fun imageLabel(file: File): String = when (file.extension.lowercase()) {
@@ -87,9 +86,10 @@ object GameLibrary {
     }
 
     /** Mirrors the native exFAT probe for raw volumes and MBR/GPT-partitioned disk images. */
-    private fun isExfatImage(file: File): Boolean = try {
+    private fun isExfatImage(file: File): Boolean {
         if (!file.isFile || file.length() < 512L) return false
-        RandomAccessFile(file, "r").use { image ->
+        return try {
+            RandomAccessFile(file, "r").use { image ->
             fun readSector(lba: Long): ByteArray? {
                 if (lba < 0L || lba > (image.length() - 512L) / 512L) return null
                 return ByteArray(512).also { bytes ->
@@ -122,8 +122,8 @@ object GameLibrary {
                 if (clusterCount == 0L || rootCluster < 2L || rootCluster >= 2L + clusterCount) return false
                 val heapEnd = heapOffset + (clusterCount shl clusterShift)
                 if (heapEnd < heapOffset || heapEnd > volumeLength) return false
-                val volumeBytes = volumeLength shl bytesShift
-                return volumeBytes > 0L && volumeBytes >= volumeLength && volumeBytes <= image.length()
+                val sectorBytes = 1L shl bytesShift
+                return volumeLength <= image.length() / sectorBytes
             }
 
             if (validBoot(readSector(0))) return true
@@ -151,12 +151,13 @@ object GameLibrary {
                 val firstLba = u64(entry, 32)
                 if (firstLba > 0L && validBoot(readSector(firstLba))) return true
             }
+                false
+            }
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
             false
         }
-    } catch (_: IOException) {
-        false
-    } catch (_: SecurityException) {
-        false
     }
 
     private fun isGameFolder(folder: File): Boolean = File(folder, PARAM_JSON).isFile
