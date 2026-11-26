@@ -35,8 +35,16 @@ class PkgProbeTest {
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x10100L, result.cntOffset)
         assertEquals(0x5A0L, result.cntSize)
+        assertEquals(0x00, result.fihSignedByte)
     }
 
+    @Test
+    fun preservesRetailSignedByteWithoutClaimingRetailInstallSupport() {
+        val file = writeFih("retail-marker.pkg", 0x10000L, 0x100L, 0x10100L, 0x5A0L, signedByte = 0x80)
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(0x80, result.fihSignedByte)
+    }
     @Test
     fun readMetadataConnectsValidatedFihToBoundedCntReader() {
         val cntOffset = 0x10100L
@@ -150,10 +158,12 @@ class PkgProbeTest {
         cntSize: Long,
         cntMagic: String = "CNT",
         fileSizeOverride: Int? = null,
+        signedByte: Int = 0x00,
     ): File {
         val fileSize = fileSizeOverride ?: (cntOffset + cntSize).coerceAtLeast(0x10000L).toInt()
         val bytes = ByteArray(fileSize)
         putMagic(bytes, "FIH")
+        bytes[0x05] = signedByte.toByte()
         putLe64(bytes, 0x10, pfsOffset)
         putLe64(bytes, 0x18, pfsSize)
         putLe64(bytes, 0x58, cntOffset)
