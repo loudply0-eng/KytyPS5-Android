@@ -305,6 +305,10 @@ class MainActivity : Activity() {
     }
 
     private fun launch(game: GameEntry) {
+        if (!game.launchable) {
+            showMessage(game.status ?: "This package is not currently launchable.")
+            return
+        }
         val options = LaunchOptions.resolve(
             globalResolution = settings.resolution,
             globalHud = settings.hudEnabled,
