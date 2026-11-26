@@ -247,6 +247,15 @@ void TestIsExfatImageFileForRawVolume(const TempDirectory& dir) {
 	Check(Common::IsExfatImageFile(raw), "raw exFAT boot sector is accepted");
 }
 
+void TestRejectsVolumeLengthBeyondImage(const TempDirectory& dir) {
+	auto truncated = ExfatFixture::BuildExfatVolume(SampleTree());
+	ExfatFixture::PutU64(truncated.data() + 72, UINT64_MAX);
+	const auto path = dir.File("truncated-volume.img");
+	WriteImage(path, truncated);
+	Check(Common::OpenExfatImage(path) == nullptr, "volume length beyond image is rejected");
+	Check(!Common::IsExfatImageFile(path), "truncated volume is not detected as exFAT");
+}
+
 void TestRejectsMalformedGptOffsets(const TempDirectory& dir) {
 	const auto volume = ExfatFixture::BuildExfatVolume(SampleTree());
 
@@ -279,6 +288,7 @@ int main() {
 	TestGptPartitionedImage(dir);
 	TestRejectsNonExfatImages(dir);
 	TestIsExfatImageFileForRawVolume(dir);
+	TestRejectsVolumeLengthBeyondImage(dir);
 	TestRejectsMalformedGptOffsets(dir);
 	std::printf("ExfatImageTests: all passed\n");
 	return 0;
