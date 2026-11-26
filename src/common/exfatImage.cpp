@@ -185,17 +185,27 @@ std::optional<Volume> FindVolume(std::ifstream& file, uint64_t file_size) {
 	const uint64_t entries_lba  = LoadU64(sector.data() + 72);
 	const uint32_t entry_count  = std::min(LoadU32(sector.data() + 80), GptMaxEntries);
 	const uint32_t entry_bytes  = LoadU32(sector.data() + 84);
-	if (entry_bytes < GptEntryBytes || entry_bytes > 512) {
+	if (entry_bytes < GptEntryBytes || entry_bytes > 512 || file_size < GptEntryBytes) {
 		return {};
 	}
+	// Bound the LBA before multiplying, then bound each entry before adding its index.
+	// GPT metadata is untrusted input and must not wrap uint64_t into an in-range file offset.
+	if (entries_lba > (file_size - GptEntryBytes) / SectorBytes) {
+		return {};
+	}
+	const uint64_t entries_offset = entries_lba * SectorBytes;
 	for (uint32_t i = 0; i < entry_count; ++i) {
 		std::array<uint8_t, GptEntryBytes> entry {};
-		const uint64_t offset = entries_lba * SectorBytes + uint64_t{i} * entry_bytes;
+		const uint64_t index_offset = uint64_t{i} * entry_bytes;
+		if (index_offset > file_size - GptEntryBytes - entries_offset) {
+			break;
+		}
+		const uint64_t offset = entries_offset + index_offset;
 		if (!ReadBytes(file, offset, entry.data(), entry.size())) {
 			break;
 		}
 		const uint64_t first_lba = LoadU64(entry.data() + 32);
-		if (first_lba != 0) {
+		if (first_lba != 0 && first_lba <= (file_size - SectorBytes) / SectorBytes) {
 			if (auto volume = ProbeVolume(file, first_lba * SectorBytes, file_size)) {
 				return volume;
 			}
