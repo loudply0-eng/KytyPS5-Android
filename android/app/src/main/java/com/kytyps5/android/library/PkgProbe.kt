@@ -35,6 +35,9 @@ object PkgProbe {
     private const val FIH_CNT_OFFSET_FIELD = 0x58L
     private const val FIH_CNT_SIZE_FIELD = 0xA0L
     private const val REQUIRED_PFS_OFFSET = 0x10000L
+    private const val PFS_BLOCK_SIZE = 0x10000L
+    private const val PFS_VERSION_PS5 = 2L
+    private const val PFS_FORMAT_MAGIC = 20130315L
     private const val CNT_HEADER_MIN_SIZE = 0x5A0L
 
     fun probe(file: File): PkgProbeResult {
@@ -82,8 +85,20 @@ object PkgProbe {
         val cntSize = readLe64(raf)
 
         // FIH has a fixed 64 KiB header followed by PFS, CNT (SC), then SI.
-        if (pfsOffset != REQUIRED_PFS_OFFSET || pfsSize <= 0L ||
+        if (pfsOffset != REQUIRED_PFS_OFFSET || pfsSize < PFS_BLOCK_SIZE ||
             !rangeFits(pfsOffset, pfsSize, fileSize)
+        ) return malformed()
+
+        // The PFS superblock is plaintext and occupies the first 64 KiB block.
+        // Validate only stable outer-image identifiers; do not inspect encrypted data.
+        raf.seek(pfsOffset)
+        val pfsVersion = readLe64(raf)
+        val pfsMagic = readLe64(raf)
+        raf.seek(pfsOffset + 0x20L)
+        val pfsBlockSize = readLe32(raf)
+        if (pfsVersion != PFS_VERSION_PS5 ||
+            pfsMagic != PFS_FORMAT_MAGIC ||
+            pfsBlockSize != PFS_BLOCK_SIZE
         ) return malformed()
 
         // rangeFits proves this addition cannot overflow.
@@ -108,6 +123,14 @@ object PkgProbe {
     private fun rangeFits(offset: Long, size: Long, containerSize: Long): Boolean {
         if (offset < 0L || size < 0L || containerSize < 0L) return false
         return offset <= containerSize && size <= containerSize - offset
+    }
+
+    private fun readLe32(raf: RandomAccessFile): Long {
+        val b0 = raf.readUnsignedByte().toLong()
+        val b1 = raf.readUnsignedByte().toLong()
+        val b2 = raf.readUnsignedByte().toLong()
+        val b3 = raf.readUnsignedByte().toLong()
+        return b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)
     }
 
     private fun readLe64(raf: RandomAccessFile): Long {
