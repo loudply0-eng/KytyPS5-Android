@@ -1,9 +1,11 @@
 package com.kytyps5.android.library
 
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 
@@ -33,6 +35,38 @@ class PkgProbeTest {
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x10100L, result.cntOffset)
         assertEquals(0x5A0L, result.cntSize)
+    }
+
+    @Test
+    fun readMetadataConnectsValidatedFihToBoundedCntReader() {
+        val cntOffset = 0x10100L
+        val file = writeFih("metadata.pkg", 0x10000L, 0x100L, cntOffset, 0x800L)
+        val json = """{"title":"Synthetic FIH"}""".toByteArray(Charsets.UTF_8)
+        val names = byteArrayOf(0) + "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+
+        RandomAccessFile(file, "rw").use { raf ->
+            writeBe32(raf, cntOffset + 0x10L, 2)
+            writeBe32(raf, cntOffset + 0x18L, 0x5a0)
+            // Name-table entry.
+            writeBe32(raf, cntOffset + 0x5a0L, 0x0200)
+            writeBe32(raf, cntOffset + 0x5a0L + 0x10L, 0x700)
+            writeBe32(raf, cntOffset + 0x5a0L + 0x14L, 0x40)
+            // param.json entry.
+            writeBe32(raf, cntOffset + 0x5c0L, 0x2000)
+            writeBe32(raf, cntOffset + 0x5c0L + 0x04L, 1)
+            writeBe32(raf, cntOffset + 0x5c0L + 0x10L, 0x740)
+            writeBe32(raf, cntOffset + 0x5c0L + 0x14L, json.size.toLong())
+            raf.seek(cntOffset + 0x700L)
+            raf.write(names)
+            raf.seek(cntOffset + 0x740L)
+            raf.write(json)
+        }
+
+        val metadata = PkgProbe.readMetadata(file)
+        assertNotNull(metadata)
+        assertEquals(2, metadata!!.entryCount)
+        assertEquals("sce_sys/param.json", metadata.entries[1].name)
+        assertEquals("""{"title":"Synthetic FIH"}""", metadata.paramJson)
     }
 
     @Test
@@ -124,6 +158,16 @@ class PkgProbeTest {
         bytes[offset + 1] = suffix[0].code.toByte()
         bytes[offset + 2] = suffix[1].code.toByte()
         bytes[offset + 3] = suffix[2].code.toByte()
+    }
+
+    private fun writeBe32(raf: RandomAccessFile, offset: Long, value: Long) {
+        raf.seek(offset)
+        raf.write(byteArrayOf(
+            (value ushr 24).toByte(),
+            (value ushr 16).toByte(),
+            (value ushr 8).toByte(),
+            value.toByte(),
+        ))
     }
 
     private fun putLe64(bytes: ByteArray, offset: Int, value: Long) {
