@@ -7,13 +7,12 @@ import java.io.RandomAccessFile
 /**
  * Conservative PS5 package probe.
  *
- * This class only identifies known PS5 outer-container signatures and validates
- * file-size fields that are safe to validate without decrypting or extracting.
- * It does NOT parse PFS/CNT entries, decrypt packages, or make a package launchable.
+ * It identifies known PS5 outer-container signatures and, for FIH, validates
+ * the documented PFS range without decrypting or extracting package contents.
+ * It does not make a package launchable.
  */
 data class PkgProbeResult(
     val kind: Kind,
-    val packageSize: Long? = null,
 ) {
     enum class Kind {
         PS5_FIH,
@@ -25,56 +24,47 @@ data class PkgProbeResult(
 
 object PkgProbe {
     private const val MAGIC_SIZE = 4
-    private const val HEADER_MIN_SIZE = 0x60L
-    private const val PACKAGE_SIZE_OFFSET = 0x18L
+    private const val FIH_HEADER_MIN_SIZE = 0x20L
     private const val FIH_PFS_OFFSET = 0x10L
     private const val FIH_PFS_SIZE = 0x18L
-    private const val MAX_HEADER_READ = 0x10000
 
     /** Probe a package without reading its payload into memory. */
     fun probe(file: File): PkgProbeResult {
-        if (!file.isFile || file.length() < MAGIC_SIZE) return PkgProbeResult(PkgProbeResult.Kind.NOT_PS5_PKG)
+        if (!file.isFile || file.length() < MAGIC_SIZE) {
+            return PkgProbeResult(PkgProbeResult.Kind.NOT_PS5_PKG)
+        }
 
         return try {
             RandomAccessFile(file, "r").use { raf ->
                 val magic = ByteArray(MAGIC_SIZE)
                 raf.readFully(magic)
 
-                val kind = when (String(magic, Charsets.US_ASCII)) {
-                    "\u007fFIH" -> PkgProbeResult.Kind.PS5_FIH
-                    "\u007fLIH" -> PkgProbeResult.Kind.PS5_LIH
-                    else -> return PkgProbeResult(PkgProbeResult.Kind.NOT_PS5_PKG)
+                when (String(magic, Charsets.US_ASCII)) {
+                    "\u007fFIH" -> probeFih(raf, file.length())
+                    "\u007fLIH" -> PkgProbeResult(PkgProbeResult.Kind.PS5_LIH)
+                    else -> PkgProbeResult(PkgProbeResult.Kind.NOT_PS5_PKG)
                 }
-
-                if (file.length() < HEADER_MIN_SIZE) {
-                    return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
-                }
-
-                if (file.length() > Long.MAX_VALUE - 0L) {
-                    return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
-                }
-
-                raf.seek(PACKAGE_SIZE_OFFSET)
-                val packageSize = readLe64(raf)
-                if (packageSize <= 0L || packageSize > file.length()) {
-                    return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
-                }
-
-                if (kind == PkgProbeResult.Kind.PS5_FIH) {
-                    raf.seek(FIH_PFS_OFFSET)
-                    val pfsOffset = readLe64(raf)
-                    raf.seek(FIH_PFS_SIZE)
-                    val pfsSize = readLe64(raf)
-                    if (!rangeFits(pfsOffset, pfsSize, packageSize)) {
-                        return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
-                    }
-                }
-
-                PkgProbeResult(kind, packageSize)
             }
         } catch (_: IOException) {
             PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
         }
+    }
+
+    private fun probeFih(raf: RandomAccessFile, fileSize: Long): PkgProbeResult {
+        if (fileSize < FIH_HEADER_MIN_SIZE) {
+            return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
+        }
+
+        raf.seek(FIH_PFS_OFFSET)
+        val pfsOffset = readLe64(raf)
+        raf.seek(FIH_PFS_SIZE)
+        val pfsSize = readLe64(raf)
+
+        if (!rangeFits(pfsOffset, pfsSize, fileSize)) {
+            return PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
+        }
+
+        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH)
     }
 
     private fun rangeFits(offset: Long, size: Long, containerSize: Long): Boolean {
