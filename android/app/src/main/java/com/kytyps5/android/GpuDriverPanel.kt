@@ -138,7 +138,7 @@ class GpuDriverPanel(
                 refresh()
                 onDriversChanged()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(tr("Cancel"), null)
             .show()
     }
 
@@ -161,7 +161,7 @@ class GpuDriverPanel(
                 refresh()
                 onDriversChanged()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(tr("Cancel"), null)
             .show()
     }
 
