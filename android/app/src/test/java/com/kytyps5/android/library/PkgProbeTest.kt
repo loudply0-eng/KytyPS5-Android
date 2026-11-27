@@ -46,6 +46,27 @@ class PkgProbeTest {
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
     }
+
+    @Test
+    fun recognizesRetailFihWhenOuterPfsSuperblockIsEncrypted() {
+        val file = writeFih("retail-encrypted-pfs.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, signedByte = 0x80)
+        RandomAccessFile(file, "rw").use { raf ->
+            // Retail FIH encrypts the outer-PFS block that contains the superblock.
+            raf.seek(0x10000L)
+            raf.write(ByteArray(0x10000) { 0xA5.toByte() })
+        }
+
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(0x80, result.fihSignedByte)
+        assertEquals(0x10000L, result.pfsSize)
+    }
+
+    @Test
+    fun rejectsUnknownFihSignedByte() {
+        val file = writeFih("unknown-signed-byte.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, signedByte = 0x40)
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+    }
     @Test
     fun readMetadataConnectsValidatedFihToBoundedCntReader() {
         val cntOffset = 0x20000L

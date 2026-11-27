@@ -7,9 +7,10 @@ import java.io.RandomAccessFile
 /**
  * Conservative PS5 package probe.
  *
- * It validates the FIH header, PFS segment bounds, and the embedded CNT
- * segment's location, minimum header size, and magic. It does not parse,
- * decrypt, extract, or launch package content.
+ * It validates FIH/CNT structure. Debug FIH images expose a plaintext outer-PFS
+ * superblock; retail FIH images encrypt that superblock, so only their segment
+ * geometry and readable CNT metadata are checked. This class never decrypts,
+ * extracts, installs, or launches package content.
  */
 data class PkgProbeResult(
     val kind: Kind,
@@ -91,17 +92,23 @@ object PkgProbe {
             !rangeFits(pfsOffset, pfsSize, fileSize)
         ) return malformed()
 
-        // The PFS superblock is plaintext and occupies the first 64 KiB block.
-        // Validate only stable outer-image identifiers; do not inspect encrypted data.
-        raf.seek(pfsOffset)
-        val pfsVersion = readLe64(raf)
-        val pfsMagic = readLe64(raf)
-        raf.seek(pfsOffset + 0x20L)
-        val pfsBlockSize = readLe32(raf)
-        if (pfsVersion != PFS_VERSION_PS5 ||
-            pfsMagic != PFS_FORMAT_MAGIC ||
-            pfsBlockSize != PFS_BLOCK_SIZE
-        ) return malformed()
+        if (fihSignedByte != 0x00 && fihSignedByte != 0x80) return malformed()
+
+        if (fihSignedByte == 0x00) {
+            // A debug FIH keeps the outer-PFS superblock readable. Validate only
+            // stable identifiers; encrypted payload blocks remain untouched.
+            raf.seek(pfsOffset)
+            val pfsVersion = readLe64(raf)
+            val pfsMagic = readLe64(raf)
+            raf.seek(pfsOffset + 0x20L)
+            val pfsBlockSize = readLe32(raf)
+            if (pfsVersion != PFS_VERSION_PS5 ||
+                pfsMagic != PFS_FORMAT_MAGIC ||
+                pfsBlockSize != PFS_BLOCK_SIZE
+            ) return malformed()
+        }
+        // A retail FIH encrypts the outer-PFS superblock itself. Do not interpret
+        // ciphertext as a PFS header; retain only the FIH range checks and CNT probe.
 
         // rangeFits proves this addition cannot overflow.
         val pfsEnd = pfsOffset + pfsSize
