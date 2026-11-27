@@ -194,6 +194,26 @@ class GameLibraryTest {
 
 
     @Test
+    fun scanListsRetailFihWithEncryptedOuterPfsAsMetadataOnly() {
+        val pkg = makeMetadataPkg(
+            "retail-encrypted.pkg",
+            """{"titleName":"Retail Package","titleId":"PPSA12345"}""",
+            signedByte = 0x80,
+        )
+        RandomAccessFile(pkg, "rw").use { raf ->
+            raf.seek(0x10000L)
+            raf.write(ByteArray(0x10000) { 0xA5.toByte() })
+        }
+
+        val game = (GameLibrary.scan(root) as ScanResult.Found).games.single()
+        assertEquals("Retail Package", game.title)
+        assertEquals("PPSA12345", game.titleId)
+        assertEquals(pkg.absolutePath, game.path)
+        assertTrue(!game.launchable)
+        assertEquals("PKG metadata • not installable", game.status)
+    }
+
+    @Test
     fun scanReadsMasterDataIdAndCachesUnencryptedPkgCover() {
         makeMetadataPkg(
             "vampire.pkg",
@@ -230,20 +250,23 @@ class GameLibraryTest {
         assertTrue(result.games.isEmpty())
     }
 
-    private fun makeMetadataPkg(name: String, paramJson: String): File {
+    private fun makeMetadataPkg(name: String, paramJson: String, signedByte: Int = 0x00): File {
         val cntOffset = 0x20000
         val cntSize = 0x1000
         val bytes = ByteArray(cntOffset + cntSize)
         putMagic(bytes, 0, "FIH")
+        bytes[0x05] = signedByte.toByte()
         putLe64(bytes, 0x10, 0x10000L)
         putLe64(bytes, 0x18, 0x10000L)
         putLe64(bytes, 0x58, cntOffset.toLong())
         putLe64(bytes, 0xa0, cntSize.toLong())
 
-        // Plaintext outer PFS superblock identifiers used by the conservative probe.
-        putLe64(bytes, 0x10000, 2L)
-        putLe64(bytes, 0x10008, 20130315L)
-        putLe32(bytes, 0x10020, 0x10000L)
+        // Debug FIH exposes the outer-PFS superblock; retail FIH encrypts this block.
+        if (signedByte == 0x00) {
+            putLe64(bytes, 0x10000, 2L)
+            putLe64(bytes, 0x10008, 20130315L)
+            putLe32(bytes, 0x10020, 0x10000L)
+        }
 
         putMagic(bytes, cntOffset, "CNT")
         putBe32(bytes, cntOffset + 0x10, 3L)
