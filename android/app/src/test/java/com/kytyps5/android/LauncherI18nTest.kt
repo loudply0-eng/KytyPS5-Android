@@ -44,6 +44,9 @@ class LauncherI18nTest {
             "Check for updates",
             "Download and install",
             "Cancel",
+            "PKG metadata • not installable",
+            "exFAT image",
+            "exFAT disk image",
         )
         LauncherI18n.languages.forEach { language ->
             keys.forEach { key ->
