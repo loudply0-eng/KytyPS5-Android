@@ -194,7 +194,19 @@ object GameLibrary {
         )
     }
 
-    private fun isGameFolder(folder: File): Boolean = File(folder, PARAM_JSON).isFile
+    /**
+     * Game dumps may contain param.json (newer layout) or only param.sfo (common PS4/PS5 dump
+     * layout). Resolve sce_sys case-insensitively because extracted archives may preserve casing.
+     */
+    private fun sceSysFile(folder: File, name: String): File? {
+        val sceSys = File(folder, "sce_sys").takeIf { it.isDirectory }
+            ?: folder.listFiles()?.firstOrNull { it.isDirectory && it.name.equals("sce_sys", ignoreCase = true) }
+            ?: return null
+        return sceSys.listFiles()?.firstOrNull { it.isFile && it.name.equals(name, ignoreCase = true) }
+    }
+
+    private fun isGameFolder(folder: File): Boolean =
+        sceSysFile(folder, "param.json") != null || sceSysFile(folder, "param.sfo") != null
 
     /** Title (param.json, then param.sfo TITLE, then folder name), title id and icon of a game folder. */
     fun readEntry(folder: File): GameEntry {
@@ -205,11 +217,12 @@ object GameLibrary {
             ?: folder.name
         val titleId = json?.stringOr("titleId")?.trim()?.ifEmpty { null }
             ?: (sfo?.get("TITLE_ID") as? String)?.trim()?.ifEmpty { null }
-        return GameEntry(folder, title, titleId, File(folder, ICON).takeIf { it.isFile })
+        val icon = sceSysFile(folder, "icon0.png")
+        return GameEntry(folder, title, titleId, icon)
     }
 
     private fun readParamJson(folder: File): JSONObject? = try {
-        val file = File(folder, PARAM_JSON)
+        val file = sceSysFile(folder, "param.json") ?: return null
         if (file.length() > MAX_PARAM_JSON_BYTES) throw IOException("${file.path} is too large")
         JSONObject(file.readText())
     } catch (e: JSONException) {
@@ -220,8 +233,8 @@ object GameLibrary {
     }
 
     private fun readParamSfo(folder: File): Map<String, Any>? {
-        val file = File(folder, PARAM_SFO)
-        if (!file.isFile || file.length() > MAX_SFO_BYTES) return null
+        val file = sceSysFile(folder, "param.sfo") ?: return null
+        if (file.length() > MAX_SFO_BYTES) return null
         return try {
             ParamSfo.parse(file.readBytes())
         } catch (e: IOException) {
