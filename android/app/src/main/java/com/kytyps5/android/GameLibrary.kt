@@ -221,15 +221,17 @@ object GameLibrary {
         return GameEntry(folder, title, titleId, icon)
     }
 
-    private fun readParamJson(folder: File): JSONObject? = try {
+    private fun readParamJson(folder: File): JSONObject? {
         val file = sceSysFile(folder, "param.json") ?: return null
-        if (file.length() > MAX_PARAM_JSON_BYTES) throw IOException("${file.path} is too large")
-        JSONObject(file.readText())
-    } catch (e: JSONException) {
-        Log.w(TAG, "Malformed $PARAM_JSON in ${folder.path}", e)
-        null
-    } catch (e: IOException) {
-        null
+        return try {
+            if (file.length() > MAX_PARAM_JSON_BYTES) throw IOException("${file.path} is too large")
+            JSONObject(file.readText())
+        } catch (e: JSONException) {
+            Log.w(TAG, "Malformed $PARAM_JSON in ${folder.path}", e)
+            null
+        } catch (e: IOException) {
+            null
+        }
     }
 
     private fun readParamSfo(folder: File): Map<String, Any>? {
