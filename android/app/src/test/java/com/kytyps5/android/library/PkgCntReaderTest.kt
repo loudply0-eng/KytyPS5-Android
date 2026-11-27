@@ -31,6 +31,7 @@ class PkgCntReaderTest {
         val result = PkgCntReader.read(file, 0L, file.length())
         assertNotNull(result)
         assertEquals(3, result!!.entryCount)
+        assertEquals("UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP", result.contentId)
         assertEquals("sce_sys/param.json", result.entries[1].name)
         assertEquals("{\"title\":\"Synthetic\"}", result.paramJson)
         assertEquals("sce_sys/icon0.png", result.entries[2].name)
@@ -120,6 +121,7 @@ class PkgCntReaderTest {
         bytes[3] = 'T'.code.toByte()
         putBe32(bytes, 0x10, 3)
         putBe32(bytes, 0x18, 0x5a0)
+        "UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP".toByteArray(Charsets.US_ASCII).copyInto(bytes, 0x40)
 
         // Entry 0: the NUL-terminated entry-name table.
         putBe32(bytes, 0x5a0, 0x0200)

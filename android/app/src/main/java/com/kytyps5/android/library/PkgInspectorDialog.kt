@@ -56,6 +56,7 @@ class PkgInspectorDialog(
         addRow(content, tr("Plain entries"), plainCount.toString())
         addRow(content, tr("Encrypted entries"), encryptedCount.toString())
         addRow(content, tr("Cover image"), tr(if (metadata?.iconPng != null) "Available" else "Not found"))
+        addRow(content, tr("Content ID"), game.contentId ?: tr("Not available"))
         addRow(content, tr("Game ID"), game.titleId ?: json?.optString("masterDataId")?.takeIf(::hasValue) ?: tr("Not available"))
         addRow(
             content,

@@ -208,6 +208,7 @@ class GameLibraryTest {
         val game = (GameLibrary.scan(root) as ScanResult.Found).games.single()
         assertEquals("Retail Package", game.title)
         assertEquals("PPSA12345", game.titleId)
+        assertEquals("UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP", game.contentId)
         assertEquals(pkg.absolutePath, game.path)
         assertTrue(!game.launchable)
         assertEquals("PKG metadata • not installable", game.status)
@@ -260,6 +261,8 @@ class GameLibraryTest {
         putLe64(bytes, 0x18, 0x10000L)
         putLe64(bytes, 0x58, cntOffset.toLong())
         putLe64(bytes, 0xa0, cntSize.toLong())
+        "UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP".toByteArray(Charsets.US_ASCII)
+            .copyInto(bytes, cntOffset + 0x40)
 
         // Debug FIH exposes the outer-PFS superblock; retail FIH encrypts this block.
         if (signedByte == 0x00) {

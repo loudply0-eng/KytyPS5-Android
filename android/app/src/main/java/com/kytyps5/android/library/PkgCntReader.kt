@@ -20,6 +20,8 @@ data class PkgCntMetadata(
     val paramJson: String?,
     /** Unencrypted, bounded sce_sys/icon0.png payload from CNT, when present and valid. */
     val iconPng: ByteArray? = null,
+    /** Plaintext 0x30-byte CNT content identifier, when the field is valid ASCII. */
+    val contentId: String? = null,
 ) {
     data class Entry(
         val id: Long,
@@ -54,6 +56,7 @@ object PkgCntReader {
                 raf.readFully(magic)
                 if (!magic.contentEquals(byteArrayOf(0x7f, 0x43, 0x4e, 0x54))) return null
 
+                val contentId = readContentId(raf, cntOffset)
                 val entryCount = readBe32(raf, cntOffset + 0x10L)
                 val tableOffset = readBe32(raf, cntOffset + 0x18L)
                 if (entryCount <= 0L || entryCount > MAX_ENTRIES ||
@@ -138,7 +141,7 @@ object PkgCntReader {
                     }
                 }
 
-                PkgCntMetadata(entryCount.toInt(), publicEntries, paramJson, iconPng)
+                PkgCntMetadata(entryCount.toInt(), publicEntries, paramJson, iconPng, contentId)
             }
         } catch (_: IOException) {
             null
@@ -161,6 +164,14 @@ object PkgCntReader {
             (raf.readUnsignedByte().toLong() shl 16) or
             (raf.readUnsignedByte().toLong() shl 8) or
             raf.readUnsignedByte().toLong())
+    }
+
+    private fun readContentId(raf: RandomAccessFile, cntOffset: Long): String? {
+        val bytes = readBytes(raf, cntOffset + 0x40L, 0x30)
+        val end = bytes.indexOf(0).let { if (it < 0) bytes.size else it }
+        if (end == 0) return null
+        if ((0 until end).any { (bytes[it].toInt() and 0xff) !in 0x20..0x7e }) return null
+        return String(bytes, 0, end, StandardCharsets.US_ASCII).trim().ifEmpty { null }
     }
 
     private fun readBytes(raf: RandomAccessFile, offset: Long, size: Int): ByteArray {

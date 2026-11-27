@@ -27,6 +27,7 @@ data class GameEntry(
     /** False for recognized containers whose contents are not yet installable or launchable. */
     val launchable: Boolean = true,
     val status: String? = null,
+    val contentId: String? = null,
 ) {
     val path: String get() = folder.absolutePath
 }
@@ -193,6 +194,7 @@ object GameLibrary {
             title = title,
             titleId = titleId,
             icon = icon,
+            contentId = metadata.contentId,
             launchable = false,
             status = "PKG metadata • not installable",
         )
