@@ -133,7 +133,7 @@ class PkgCntReaderTest {
         val json = "{\"title\":\"Synthetic\"}".toByteArray(Charsets.UTF_8)
         putBe32(bytes, 0x5c0 + 0x14, json.size)
         // Entry 2: optional, unencrypted icon0.png presentation metadata.
-        val icon = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cXioAAAAASUVORK5CYII=")
+        val icon = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==")
         putBe32(bytes, 0x5e0, 0x1200)
         putBe32(bytes, 0x5e0 + 0x04, 20)
         putBe32(bytes, 0x5e0 + 0x10, 0x780)
