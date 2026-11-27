@@ -95,7 +95,7 @@ class GameLibraryTest {
     fun imageLabelNamesEachImageFormat() {
         assertEquals("ZArchive", GameLibrary.imageLabel(File("a.zar")))
         assertEquals("exFAT image", GameLibrary.imageLabel(File("a.EXFAT")))
-        assertEquals("", GameLibrary.imageLabel(File("a.img")))
+        assertEquals("exFAT disk image", GameLibrary.imageLabel(File("a.img")))
     }
 
     @Test
