@@ -169,9 +169,10 @@ object PkgCntReader {
     private fun readContentId(raf: RandomAccessFile, cntOffset: Long): String? {
         val bytes = readBytes(raf, cntOffset + 0x40L, 0x30)
         val end = bytes.indexOf(0).let { if (it < 0) bytes.size else it }
-        if (end == 0) return null
-        if ((0 until end).any { (bytes[it].toInt() and 0xff) !in 0x20..0x7e }) return null
-        return String(bytes, 0, end, StandardCharsets.US_ASCII).trim().ifEmpty { null }
+        // PS5 CNT content IDs are exactly 36 printable ASCII characters in a 0x30-byte field.
+        if (end != 36) return null
+        if ((0 until end).any { (bytes[it].toInt() and 0xff) !in 0x21..0x7e }) return null
+        return String(bytes, 0, end, StandardCharsets.US_ASCII)
     }
 
     private fun readBytes(raf: RandomAccessFile, offset: Long, size: Int): ByteArray {

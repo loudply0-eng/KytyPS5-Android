@@ -40,6 +40,19 @@ class PkgCntReaderTest {
     }
 
     @Test
+    fun rejectsMalformedContentIdLength() {
+        val file = makeCnt("bad-content-id.cnt")
+        RandomAccessFile(file, "rw").use { raf ->
+            raf.seek(0x40L)
+            raf.write("NOT-A-36-CHAR-ID".toByteArray(Charsets.US_ASCII))
+            raf.write(ByteArray(0x30 - "NOT-A-36-CHAR-ID".length))
+        }
+        val result = PkgCntReader.read(file, 0L, file.length())
+        assertNotNull(result)
+        assertNull(result!!.contentId)
+    }
+
+    @Test
     fun doesNotDecodeEncryptedParamJson() {
         val file = makeCnt("encrypted-param.cnt") { raf ->
             writeBe32(raf, 0x5c0L + 0x08L, 0x80000000L)
