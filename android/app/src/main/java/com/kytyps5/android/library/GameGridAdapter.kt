@@ -58,10 +58,14 @@ class GameGridAdapter(
         val holder = view.tag as Holder
         val game = games[position]
         holder.title.text = game.title
-        val subtitle = listOfNotNull(game.titleId, game.status).joinToString(" · ")
-            .ifEmpty { if (game.folder.isFile) GameLibrary.imageLabel(game.folder) else "" }
         val language = LauncherSettings(context).language
-        holder.subtitle.text = LauncherI18n.translate(subtitle, language)
+        val status = game.status?.let { LauncherI18n.translate(it, language) }
+        val subtitle = listOfNotNull(game.titleId, status).joinToString(" · ")
+            .ifEmpty {
+                val fallback = if (game.folder.isFile) GameLibrary.imageLabel(game.folder) else ""
+                LauncherI18n.translate(fallback, language)
+            }
+        holder.subtitle.text = subtitle
         holder.play.text = LauncherI18n.translate(if (game.launchable) "Play" else "Metadata only", language)
         holder.play.isEnabled = game.launchable
         holder.play.alpha = if (game.launchable) 1f else 0.55f
