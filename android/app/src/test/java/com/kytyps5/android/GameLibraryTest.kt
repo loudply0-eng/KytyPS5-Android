@@ -194,22 +194,18 @@ class GameLibraryTest {
 
 
     @Test
-    fun scanListsRetailFihWithPlaintextPfsHeaderAndEncryptedData() {
+    fun scanListsRetailFihWithEncryptedOuterPfsAndReadableCnt() {
         val pkg = makeMetadataPkg(
             "retail-encrypted.pkg",
             """{"titleName":"Retail Package","titleId":"PPSA12345"}""",
             signedByte = 0x80,
             pfsSize = 0x20000L,
-            pfsMode = 0x000c,
         )
-        RandomAccessFile(pkg, "rw").use { raf ->
-            raf.seek(0x20000L)
-            raf.write(ByteArray(0x10000) { 0xA5.toByte() })
-        }
 
         val probe = com.kytyps5.android.library.PkgProbe.probe(pkg)
         assertEquals(0x20000L, probe.pfsSize)
         assertEquals(true, probe.pfsEncrypted)
+        assertEquals(null, probe.pfsSuperblock)
 
         val game = (GameLibrary.scan(root) as ScanResult.Found).games.single()
         assertEquals("Retail Package", game.title)
@@ -276,13 +272,17 @@ class GameLibraryTest {
         "UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP".toByteArray(Charsets.US_ASCII)
             .copyInto(bytes, cntOffset + 0x40)
 
-        // Debug and Retail FIH both keep the outer-PFS superblock plaintext.
-        // The PFS mode bit (when set) applies to later data blocks, not this header block.
-        putLe64(bytes, 0x10000, 2L)
-        putLe64(bytes, 0x10008, 20130315L)
-        bytes[0x1001c] = pfsMode.toByte()
-        bytes[0x1001d] = (pfsMode ushr 8).toByte()
-        putLe32(bytes, 0x10020, 0x10000L)
+        if (signedByte == 0x80) {
+            // Retail encrypts the complete outer PFS, including its superblock.
+            bytes.fill(0xA5.toByte(), 0x10000, (0x10000L + pfsSize).toInt())
+        } else {
+            // Debug fixture keeps a readable outer-PFS superblock.
+            putLe64(bytes, 0x10000, 2L)
+            putLe64(bytes, 0x10008, 20130315L)
+            bytes[0x1001c] = pfsMode.toByte()
+            bytes[0x1001d] = (pfsMode ushr 8).toByte()
+            putLe32(bytes, 0x10020, 0x10000L)
+        }
 
         putMagic(bytes, cntOffset, "CNT")
         putBe32(bytes, cntOffset + 0x10, 3L)
