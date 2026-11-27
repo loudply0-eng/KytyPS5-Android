@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -39,7 +40,14 @@ class GameGridAdapter(
     private val density = context.resources.displayMetrics.density
     private val Int.dp: Int get() = (this * density).toInt()
 
-    private class Holder(val cover: ImageView, val placeholder: TextView, val title: TextView, val subtitle: TextView, val gear: TextView)
+    private class Holder(
+        val cover: ImageView,
+        val placeholder: TextView,
+        val title: TextView,
+        val subtitle: TextView,
+        val gear: TextView,
+        val play: Button,
+    )
 
     override fun getCount(): Int = games.size
     override fun getItem(position: Int): GameEntry = games[position]
@@ -51,8 +59,13 @@ class GameGridAdapter(
         val game = games[position]
         holder.title.text = game.title
         val subtitle = game.status ?: game.titleId ?: if (game.folder.isFile) GameLibrary.imageLabel(game.folder) else ""
-        holder.subtitle.text = LauncherI18n.translate(subtitle, LauncherSettings(context).language)
-        holder.placeholder.text = initials(game.title)
+        val language = LauncherSettings(context).language
+        holder.subtitle.text = LauncherI18n.translate(subtitle, language)
+        holder.play.text = LauncherI18n.translate(if (game.launchable) "Play" else "Metadata only", language)
+        holder.play.isEnabled = game.launchable
+        holder.play.alpha = if (game.launchable) 1f else 0.55f
+        holder.play.setOnClickListener { onPlay(game) }
+        holder.placeholder.text = initials(game.title).ifBlank { "PS5" }
         holder.placeholder.visibility = View.GONE
         covers.load(game.icon, holder.cover) { holder.placeholder.visibility = View.VISIBLE }
         view.setOnClickListener { onPlay(game) }
@@ -94,6 +107,12 @@ class GameGridAdapter(
             contentDescription = "Game settings"
             setPadding(6.dp, 0, 0, 0)
         }
+        val play = Button(context).apply {
+            text = LauncherI18n.translate("Play", LauncherSettings(context).language)
+            isAllCaps = false
+            minHeight = 36.dp
+            setPadding(6.dp, 0, 6.dp, 0)
+        }
         val coverFrame = FrameLayout(context).apply {
             addView(cover, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(placeholder, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -114,7 +133,8 @@ class GameGridAdapter(
             setPadding(6.dp, 6.dp, 6.dp, 6.dp)
             addView(coverFrame, LinearLayout.LayoutParams(coverPx, coverPx))
             addView(caption, LinearLayout.LayoutParams(coverPx, ViewGroup.LayoutParams.WRAP_CONTENT))
-            tag = Holder(cover, placeholder, title, subtitle, gear)
+            addView(play, LinearLayout.LayoutParams(coverPx, 40.dp))
+            tag = Holder(cover, placeholder, title, subtitle, gear, play)
         }
     }
 
