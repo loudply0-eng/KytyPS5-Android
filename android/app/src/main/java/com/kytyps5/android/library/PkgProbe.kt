@@ -17,6 +17,8 @@ data class PkgProbeResult(
     val cntSize: Long? = null,
     /** Raw FIH byte at 0x05: 0x00 debug, 0x80 retail/submitted in the documented layout. */
     val fihSignedByte: Int? = null,
+    /** Exact PFS segment byte length from the FIH header. */
+    val pfsSize: Long? = null,
 ) {
     enum class Kind {
         PS5_FIH,
@@ -114,7 +116,7 @@ object PkgProbe {
             return malformed()
         }
 
-        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte)
+        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize)
     }
 
     private fun malformed() =

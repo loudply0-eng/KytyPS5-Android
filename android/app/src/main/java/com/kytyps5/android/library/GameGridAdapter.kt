@@ -67,8 +67,9 @@ class GameGridAdapter(
             }
         holder.subtitle.text = subtitle
         holder.play.text = LauncherI18n.translate(if (game.launchable) "Play" else "Package details", language)
-        holder.play.isEnabled = game.launchable
-        holder.play.alpha = if (game.launchable) 1f else 0.55f
+        // Non-launchable PKGs still have an active details action; launch() routes them to the inspector.
+        holder.play.isEnabled = true
+        holder.play.alpha = if (game.launchable) 1f else 0.9f
         holder.play.setOnClickListener { onPlay(game) }
         holder.placeholder.text = initials(game.title).ifBlank { "PS5" }
         holder.placeholder.visibility = View.GONE

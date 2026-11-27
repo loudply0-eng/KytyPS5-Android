@@ -42,7 +42,7 @@ class PkgInspectorDialog(
             0x80 -> tr("Retail / submitted")
             else -> tr("Unknown")
         }
-        val pfsSize = probe.cntOffset?.minus(FIH_PFS_OFFSET)?.takeIf { it >= 0L }
+        val pfsSize = probe.pfsSize
         val plainCount = metadata?.entries?.count { !it.encrypted } ?: 0
         val encryptedCount = metadata?.entries?.count { it.encrypted } ?: 0
 
@@ -145,7 +145,6 @@ class PkgInspectorDialog(
     }
 
     private companion object {
-        const val FIH_PFS_OFFSET = 0x10000L
         const val MAX_VISIBLE_ENTRIES = 60
         const val MAX_NAME_LENGTH = 120
     }

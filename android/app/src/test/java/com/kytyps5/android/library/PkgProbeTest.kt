@@ -35,6 +35,7 @@ class PkgProbeTest {
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x20000L, result.cntOffset)
         assertEquals(0x5A0L, result.cntSize)
+        assertEquals(0x10000L, result.pfsSize)
         assertEquals(0x00, result.fihSignedByte)
     }
 
