@@ -146,10 +146,11 @@ class MainActivity : Activity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            layoutDirection = if (LauncherI18n.isRtl(settings.language)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             setPadding(16.dp, 16.dp, 16.dp, 16.dp)
             addView(label("PS5 Game Hub", sizeSp = 22f, bold = true))
             addView(Button(context).apply {
-                text = if (settings.language == "ar") "الإعدادات" else "Settings"
+                text = LauncherI18n.translate("Settings", settings.language)
                 backgroundTintList = android.content.res.ColorStateList.valueOf(settings.accentColor)
                 setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
             })
@@ -382,37 +383,26 @@ class MainActivity : Activity() {
     }
 
     private fun localize(value: String): String {
-        if (settings.language != "ar") return value
-        val exact = mapOf(
-            "Emulator library: installed" to "مكتبة المحاكي: مثبتة",
-            "All-files access: granted" to "صلاحية الوصول إلى كل الملفات: ممنوحة",
-            "All-files access: not granted. Games live on shared storage, so the launcher needs it." to "صلاحية الوصول إلى الملفات غير ممنوحة. مجلدات الألعاب موجودة في التخزين المشترك، لذلك يحتاج التطبيق لهذه الصلاحية.",
-            "Grant all-files access" to "منح صلاحية الوصول إلى كل الملفات",
-            "Games folder" to "مجلد الألعاب",
-            "Choose folder…" to "اختيار مجلد…",
-            "Rescan" to "إعادة الفحص",
-            "Resolution  " to "الدقة  ",
-            "  Render scale  " to "  مقياس العرض  ",
-            "Performance HUD" to "عرض معلومات الأداء",
-            "Touch controls" to "أزرار التحكم باللمس",
-            "Max GPU clock (faster, runs hotter)" to "أقصى تردد لمعالج الرسوميات (أسرع وحرارة أعلى)",
-            "No games found here. Choose a folder containing game dumps (a folder with sce_sys/param.json, or a .zar or .exfat file)." to "لم يتم العثور على ألعاب هنا. اختر مجلداً يحتوي على ملفات لعبة، مثل مجلد يتضمن sce_sys/param.json أو ملف .zar أو .exfat.",
-            "GPU driver" to "تعريف معالج الرسوميات",
-            "Grant all-files access to scan for games." to "امنح صلاحية الوصول إلى كل الملفات لفحص الألعاب.",
-            "Grant all-files access before scanning." to "امنح صلاحية الوصول إلى كل الملفات قبل الفحص.",
-            "No folder picker is available on this device." to "لا تتوفر أداة اختيار المجلدات على هذا الجهاز.",
-        )
-        exact[value]?.let { return it }
-        if (value.startsWith("Emulator library: missing")) return "مكتبة المحاكي غير موجودة (" + value.substringAfter("(")
-        if (value.startsWith("Scanning ")) return "جارٍ فحص " + value.removePrefix("Scanning ").removeSuffix(" ...") + "..."
-        if (value.startsWith("No games found here.")) return "لم يتم العثور على ألعاب في هذا المجلد. اختر مجلداً يحتوي على ملفات الألعاب."
+        val language = settings.language
+        if (value.startsWith("Emulator library: missing")) {
+            val fileName = value.substringAfter("(")
+            return LauncherI18n.translate("Emulator library: missing", language) + " (" + fileName
+        }
+        if (value.startsWith("Scanning ")) {
+            val path = value.removePrefix("Scanning ").removeSuffix(" ...")
+            return LauncherI18n.translate("Scanning", language) + " " + path + "..."
+        }
         if (value.endsWith(" game(s) found. Tap to play, ⚙ or long-press for game settings.")) {
             val count = value.substringBefore(" game(s)").toIntOrNull() ?: 0
-            return "تم العثور على $count لعبة. اضغط للتشغيل أو اضغط مطولاً لفتح إعدادات اللعبة."
+            return count.toString() + " " + LauncherI18n.translate(
+                "games found. Tap to play, ⚙ or long-press for game settings.",
+                language,
+            )
         }
-        if (value.startsWith("Pick a folder on device storage")) return "اختر مجلداً من ذاكرة الجهاز أو بطاقة SD؛ المجلدات السحابية غير مدعومة."
-        if (value.startsWith("Could not create ")) return "تعذر إنشاء " + value.removePrefix("Could not create ")
-        return value
+        if (value.startsWith("Could not create ")) {
+            return LauncherI18n.translate("Could not create ", language) + value.removePrefix("Could not create ")
+        }
+        return LauncherI18n.translate(value, language)
     }
 
     private companion object {
