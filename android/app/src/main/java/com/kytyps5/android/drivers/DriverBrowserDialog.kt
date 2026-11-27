@@ -15,6 +15,8 @@ import android.widget.TextView
 import com.kytyps5.android.DriverImportResult
 import com.kytyps5.android.GpuDriver
 import com.kytyps5.android.GpuDriverStore
+import com.kytyps5.android.LauncherI18n
+import com.kytyps5.android.LauncherSettings
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -38,6 +40,8 @@ class DriverBrowserDialog(
     private val downloader = DriverDownloader(File(activity.cacheDir, DOWNLOAD_DIR))
     private val density = activity.resources.displayMetrics.density
     private val Int.dp: Int get() = (this * density).toInt()
+    private val language get() = LauncherSettings(activity).language
+    private fun tr(value: String): String = LauncherI18n.translate(value, language)
 
     private lateinit var status: TextView
     private lateinit var list: LinearLayout
@@ -61,12 +65,13 @@ class DriverBrowserDialog(
             orientation = LinearLayout.HORIZONTAL
             addView(spinner, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(Button(activity).apply {
-                text = "Refresh"
+                text = tr("Refresh")
                 setOnClickListener { load(forceRefresh = true) }
             })
         }
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
+            layoutDirection = if (LauncherI18n.isRtl(language)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             setPadding(20.dp, 8.dp, 20.dp, 0)
             addView(header)
             addView(status)
@@ -81,9 +86,9 @@ class DriverBrowserDialog(
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
         AlertDialog.Builder(activity)
-            .setTitle("Download GPU drivers")
+            .setTitle(tr("Download GPU drivers"))
             .setView(content)
-            .setNegativeButton("Close", null)
+            .setNegativeButton(tr("Close"), null)
             .setOnDismissListener {
                 cancelled.set(true)
                 worker.shutdown()
@@ -94,7 +99,7 @@ class DriverBrowserDialog(
     private fun load(forceRefresh: Boolean) {
         val current = ++request
         val target = repo
-        status.text = "Loading ${target.slug}…"
+        status.text = tr("Loading ") + target.slug + "…"
         list.removeAllViews()
         background {
             if (model == null) model = adrenoModel()
@@ -105,19 +110,19 @@ class DriverBrowserDialog(
 
     private fun render(result: CatalogResult) {
         list.removeAllViews()
-        val gpu = model?.let { "Adreno $it" } ?: "GPU not detected"
+        val gpu = model?.let { "Adreno $it" } ?: tr("GPU not detected")
         when (result) {
             is CatalogResult.Failure -> status.text = "$gpu · ${result.message}"
             is CatalogResult.Releases -> {
-                val source = if (result.fromCache) "cached" else "live"
-                status.text = listOfNotNull("$gpu · ${result.releases.size} releases ($source)", result.note).joinToString("\n")
+                val source = tr(if (result.fromCache) "cached" else "live")
+                status.text = listOfNotNull("$gpu · ${result.releases.size} " + tr("releases") + " ($source)", result.note).joinToString("\n")
                 result.releases.forEach(::addRelease)
             }
         }
     }
 
     private fun addRelease(release: DriverRelease) {
-        val pre = if (release.prerelease) " · pre-release" else ""
+        val pre = if (release.prerelease) " · " + tr("pre-release") else ""
         list.addView(text("${release.title}  ${release.publishedDate}$pre", 15f, bold = true).apply { setPadding(0, 12.dp, 0, 2.dp) })
         release.assets
             .map { it to DriverAdvisor.advise(model, release.tag, it.name) }
@@ -135,18 +140,18 @@ class DriverBrowserDialog(
         }
         addView(info, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         addView(Button(activity).apply {
-            text = "Get"
+            text = tr("Get")
             setOnClickListener { download(asset) }
         })
     }
 
     private fun download(asset: DriverAsset) {
         if (busy) {
-            status.text = "Wait for the current download or install to finish."
+            status.text = tr("Wait for the current download or install to finish.")
             return
         }
         busy = true
-        status.text = "Downloading ${asset.name}…"
+        status.text = tr("Downloading ") + asset.name + "…"
         background {
             var lastPercent = -1
             val result = downloader.download(
@@ -156,7 +161,7 @@ class DriverBrowserDialog(
                     if (percent != lastPercent) {
                         lastPercent = percent
                         val progress = if (total > 0) "$percent%" else "$percent MB"
-                        onUi { status.text = "Downloading ${asset.name}… $progress" }
+                        onUi { status.text = tr("Downloading ") + asset.name + "… $progress" }
                     }
                 },
                 isCancelled = cancelled::get,
@@ -174,18 +179,18 @@ class DriverBrowserDialog(
     }
 
     private fun confirmInstall(asset: DriverAsset, done: DownloadResult.Done) {
-        status.text = "Downloaded ${asset.name}."
+        status.text = tr("Downloaded ") + asset.name + "."
         val check = when (done.verified) {
-            true -> "✓ matches the sha256 GitHub published"
-            null -> "GitHub published no checksum for this file"
+            true -> "✓" + tr(" matches the sha256 GitHub published")
+            null -> tr("GitHub published no checksum for this file")
             false -> "✗ mismatch"
         }
         AlertDialog.Builder(activity)
-            .setTitle("Install ${asset.name}?")
+            .setTitle(tr("Install ") + asset.name + "?")
             .setMessage("sha256: ${done.sha256}\n$check")
-            .setPositiveButton("Install and use") { _, _ -> install(done.file, useNow = true) }
-            .setNeutralButton("Install only") { _, _ -> install(done.file, useNow = false) }
-            .setNegativeButton("Cancel") { _, _ ->
+            .setPositiveButton(tr("Install and use")) { _, _ -> install(done.file, useNow = true) }
+            .setNeutralButton(tr("Install only")) { _, _ -> install(done.file, useNow = false) }
+            .setNegativeButton(tr("Cancel")) { _, _ ->
                 done.file.delete()
                 busy = false
             }
@@ -197,7 +202,7 @@ class DriverBrowserDialog(
     }
 
     private fun install(file: File, useNow: Boolean) {
-        status.text = "Installing…"
+        status.text = tr("Installing…")
         background {
             val result = try {
                 file.inputStream().use(store::import)
@@ -212,7 +217,7 @@ class DriverBrowserDialog(
                 if (activity.isDestroyed) return@runOnUiThread
                 when (result) {
                     is DriverImportResult.Imported -> {
-                        status.text = "Installed ${result.driver.label}."
+                        status.text = tr("Installed ") + result.driver.label + "."
                         onInstalled(result.driver, useNow)
                     }
                     is DriverImportResult.Failure -> status.text = result.message
