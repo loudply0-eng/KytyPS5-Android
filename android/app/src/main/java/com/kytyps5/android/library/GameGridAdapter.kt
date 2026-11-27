@@ -66,7 +66,7 @@ class GameGridAdapter(
                 LauncherI18n.translate(fallback, language)
             }
         holder.subtitle.text = subtitle
-        holder.play.text = LauncherI18n.translate(if (game.launchable) "Play" else "Metadata only", language)
+        holder.play.text = LauncherI18n.translate(if (game.launchable) "Play" else "Package details", language)
         holder.play.isEnabled = game.launchable
         holder.play.alpha = if (game.launchable) 1f else 0.55f
         holder.play.setOnClickListener { onPlay(game) }
