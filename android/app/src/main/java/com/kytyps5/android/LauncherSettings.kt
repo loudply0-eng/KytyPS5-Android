@@ -23,8 +23,8 @@ class LauncherSettings(context: Context) {
         set(value) { prefs.edit().putLong(KEY_AUTO_UPDATE_LAST_ATTEMPT, value).apply() }
 
     var language: String
-        get() = prefs.getString(KEY_LANGUAGE, "en")?.takeIf { it == "ar" || it == "en" } ?: "en"
-        set(value) { prefs.edit().putString(KEY_LANGUAGE, if (value == "ar") "ar" else "en").apply() }
+        get() = LauncherI18n.normalize(prefs.getString(KEY_LANGUAGE, "en"))
+        set(value) { prefs.edit().putString(KEY_LANGUAGE, LauncherI18n.normalize(value)).apply() }
 
     var accentColor: Int
         get() = prefs.getInt(KEY_ACCENT_COLOR, DEFAULT_ACCENT_COLOR)
