@@ -10,11 +10,11 @@ This document describes what the launcher can recognize today. A file extension 
 | `.zar` | Listed as a ZArchive image | Passed to the existing archive mount path |
 | `.exfat` | Listed as an exFAT image | Passed to the existing exFAT mount path |
 | `.img` | Listed only when a bounded content probe confirms a raw, MBR-partitioned, or GPT-partitioned exFAT volume | Passed to the exFAT mount path; arbitrary ISO/raw images are not accepted |
-| `.pkg` | Validates PS5 FIH outer-header, PFS/CNT ranges and plaintext CNT metadata; reads unencrypted `param.json` when present | **Metadata only — not installable or launchable** |
+| `.pkg` | Validates PS5 FIH outer-header, PFS/CNT ranges and plaintext CNT metadata; reads unencrypted `param.json` and bounded PNG `icon0.png` when present | **Metadata and cover only — not installable or launchable** |
 
 The game grid displays `icon0.png` when available; when the dump has no usable cover image it displays a title-initial fallback rather than a blank cover. The per-game Play button is enabled only for launchable entries.
 
-The PKG reader does not decrypt PFS/PFSC payloads, decrypt encrypted metadata, extract package files, install packages, process licences/keys, bypass DRM, or invoke the emulator with a PKG. LIH is signature recognition only and is not treated as a validated installable package. Invalid files renamed to `.pkg` are ignored.
+For PKGs, the launcher can show the title, PS5 master data ID and cover when those CNT fields are plaintext. The cover is copied into app-private cache; encrypted or malformed image entries are ignored. The game payload is stored in the package PFS image, which is encrypted in normal finalized retail packages. The PKG reader does not decrypt PFS/PFSC payloads or encrypted metadata, extract game files, install packages, process licences/keys, bypass DRM, or invoke the emulator with a PKG. LIH is signature recognition only and is not treated as a validated installable package. Invalid files renamed to `.pkg` are ignored.
 
 Other formats such as ISO, CHD, CSO, ZIP/7z archives, and arbitrary BIN files are not claimed as supported by this change. Each additional format needs its own validated parser/mount path and tests; adding an extension to the scanner is not sufficient.
 

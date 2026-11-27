@@ -9,6 +9,7 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -16,7 +17,7 @@ import org.json.JSONObject
  * A game the emulator can load: an extracted dump folder (contains sce_sys/param.json) or a
  * dump image the emulator mounts read-only without extracting: a ZArchive file (*.zar) or an
  * exFAT disk image (*.exfat).
- * [titleId] and [icon] (sce_sys/icon0.png) are known for extracted folders only.
+ * Metadata and an optional cover image can also be read safely from an unencrypted PKG CNT segment.
  */
 data class GameEntry(
     val folder: File,
@@ -59,19 +60,19 @@ object GameLibrary {
     /** How deep below the chosen folder to look; dumps are often nested one or two levels. */
     const val MAX_SCAN_DEPTH = 3
 
-    fun scan(root: File): ScanResult {
+    fun scan(root: File, cacheDir: File? = null): ScanResult {
         if (!root.exists()) return ScanResult.Failure("Folder not found: ${root.path}")
         if (!root.isDirectory) return ScanResult.Failure("Not a folder: ${root.path}")
         if (root.listFiles() == null) {
             return ScanResult.Failure("Cannot read ${root.path}. Check all-files access.")
         }
         val games = mutableListOf<GameEntry>()
-        collect(root, depth = 0, into = games)
+        collect(root, depth = 0, into = games, cacheDir = cacheDir)
         return ScanResult.Found(games.sortedBy { it.title.lowercase() })
     }
 
     /** The chosen folder may itself be a game; otherwise look below it, without entering games. */
-    private fun collect(folder: File, depth: Int, into: MutableList<GameEntry>) {
+    private fun collect(folder: File, depth: Int, into: MutableList<GameEntry>, cacheDir: File?) {
         if (isGameFolder(folder)) {
             into += readEntry(folder)
             return
@@ -84,10 +85,10 @@ object GameLibrary {
         // metadata are listed. PKG entries remain non-launchable until a legal install path exists.
         children
             .filter { it.isFile && it.extension.equals(PKG_EXTENSION, ignoreCase = true) }
-            .mapNotNullTo(into) { readPkgEntry(it) }
+            .mapNotNullTo(into) { readPkgEntry(it, cacheDir) }
         if (depth >= MAX_SCAN_DEPTH) return
         children.filter { it.isDirectory && !it.name.startsWith(".") }
-            .forEach { collect(it, depth + 1, into) }
+            .forEach { collect(it, depth + 1, into, cacheDir) }
     }
 
     private fun isSupportedImage(file: File): Boolean = when (file.extension.lowercase()) {
@@ -175,7 +176,7 @@ object GameLibrary {
         }
     }
 
-    private fun readPkgEntry(file: File): GameEntry? {
+    private fun readPkgEntry(file: File, cacheDir: File?): GameEntry? {
         val probe = PkgProbe.probe(file)
         // LIH is signature-only in the current parser; do not advertise it as installable.
         if (probe.kind != PkgProbeResult.Kind.PS5_FIH) return null
@@ -183,15 +184,44 @@ object GameLibrary {
         val json = metadata.paramJson?.let { runCatching { JSONObject(it) }.getOrNull() }
         val title = json?.let { titleFromParamJson(it, "") }?.ifEmpty { null }
             ?: file.nameWithoutExtension
-        val titleId = json?.stringOr("titleId")?.trim()?.ifEmpty { null }
+        // PS5 param.json uses masterDataId for the PPSA title id; accept titleId as a fallback.
+        val titleId = json?.stringOr("masterDataId")?.trim()?.ifEmpty { null }
+            ?: json?.stringOr("titleId")?.trim()?.ifEmpty { null }
+        val icon = metadata.iconPng?.let { cachePkgIcon(file, it, cacheDir) }
         return GameEntry(
             folder = file,
             title = title,
             titleId = titleId,
-            icon = null,
+            icon = icon,
             launchable = false,
             status = "PKG metadata • not installable",
         )
+    }
+
+    /** Writes only the already-validated CNT cover into app-private cache. */
+    private fun cachePkgIcon(pkg: File, png: ByteArray, cacheDir: File?): File? {
+        if (cacheDir == null || png.isEmpty()) return null
+        return try {
+            if (!cacheDir.isDirectory && !cacheDir.mkdirs()) return null
+            val identity = "${pkg.absolutePath}\u0000${pkg.length()}\u0000${pkg.lastModified()}"
+            val key = MessageDigest.getInstance("SHA-256")
+                .digest(identity.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            val target = File(cacheDir, "$key.png")
+            if (target.isFile && target.length() == png.size.toLong()) return target
+            val temporary = File(cacheDir, "$key.tmp")
+            temporary.writeBytes(png)
+            target.delete()
+            if (!temporary.renameTo(target)) {
+                temporary.copyTo(target, overwrite = true)
+                temporary.delete()
+            }
+            target.takeIf { it.isFile && it.length() == png.size.toLong() }
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
     }
 
     /**
@@ -215,7 +245,8 @@ object GameLibrary {
         val title = json?.let { titleFromParamJson(it, "") }?.ifEmpty { null }
             ?: (sfo?.get("TITLE") as? String)?.trim()?.ifEmpty { null }
             ?: folder.name
-        val titleId = json?.stringOr("titleId")?.trim()?.ifEmpty { null }
+        val titleId = json?.stringOr("masterDataId")?.trim()?.ifEmpty { null }
+            ?: json?.stringOr("titleId")?.trim()?.ifEmpty { null }
             ?: (sfo?.get("TITLE_ID") as? String)?.trim()?.ifEmpty { null }
         val icon = sceSysFile(folder, "icon0.png")
         return GameEntry(folder, title, titleId, icon)

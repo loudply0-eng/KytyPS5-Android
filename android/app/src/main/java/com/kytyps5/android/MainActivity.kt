@@ -300,7 +300,7 @@ class MainActivity : Activity() {
         val request = ++scanRequest
         showMessage("Scanning $root ...")
         worker.execute {
-            val result = GameLibrary.scan(File(root))
+            val result = GameLibrary.scan(File(root), File(cacheDir, "pkg-icons"))
             mainHandler.post {
                 if (request == scanRequest && !isFinishing) renderScan(result)
             }

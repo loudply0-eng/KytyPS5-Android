@@ -3,6 +3,7 @@ package com.kytyps5.android.library
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
+import java.util.Base64
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -29,9 +30,12 @@ class PkgCntReaderTest {
         val file = makeCnt("valid.cnt")
         val result = PkgCntReader.read(file, 0L, file.length())
         assertNotNull(result)
-        assertEquals(2, result!!.entryCount)
+        assertEquals(3, result!!.entryCount)
         assertEquals("sce_sys/param.json", result.entries[1].name)
         assertEquals("{\"title\":\"Synthetic\"}", result.paramJson)
+        assertEquals("sce_sys/icon0.png", result.entries[2].name)
+        assertNotNull(result.iconPng)
+        assertTrue(result.iconPng!!.isNotEmpty())
     }
 
     @Test
@@ -59,9 +63,19 @@ class PkgCntReaderTest {
     }
 
     @Test
+    fun doesNotExposeEncryptedIconPayload() {
+        val file = makeCnt("encrypted-icon.cnt") { raf ->
+            writeBe32(raf, 0x5e0L + 0x08L, 0x80000000L)
+        }
+        val result = PkgCntReader.read(file, 0L, file.length())
+        assertNotNull(result)
+        assertNull(result!!.iconPng)
+    }
+
+    @Test
     fun rejectsEntryTableOutsideCntSegment() {
         val file = makeCnt("table-outside.cnt") { raf ->
-            writeBe32(raf, 0x18L, 0x7f0L)
+            writeBe32(raf, 0x18L, 0x8d0L)
         }
         assertNull(PkgCntReader.read(file, 0L, file.length()))
     }
@@ -69,7 +83,7 @@ class PkgCntReaderTest {
     @Test
     fun rejectsEntryDataOutsideCntSegment() {
         val file = makeCnt("data-outside.cnt") { raf ->
-            writeBe32(raf, 0x5a0L + 0x20L + 0x10L, 0x7f0L)
+            writeBe32(raf, 0x5a0L + 0x20L + 0x10L, 0x8f0L)
             writeBe32(raf, 0x5a0L + 0x20L + 0x14L, 0x100L)
         }
         assertNull(PkgCntReader.read(file, 0L, file.length()))
@@ -99,12 +113,12 @@ class PkgCntReaderTest {
     }
 
     private fun makeCnt(name: String, mutate: (RandomAccessFile) -> Unit = {}): File {
-        val bytes = ByteArray(0x800)
+        val bytes = ByteArray(0x900)
         bytes[0] = 0x7f
         bytes[1] = 'C'.code.toByte()
         bytes[2] = 'N'.code.toByte()
         bytes[3] = 'T'.code.toByte()
-        putBe32(bytes, 0x10, 2)
+        putBe32(bytes, 0x10, 3)
         putBe32(bytes, 0x18, 0x5a0)
 
         // Entry 0: the NUL-terminated entry-name table.
@@ -118,9 +132,18 @@ class PkgCntReaderTest {
         putBe32(bytes, 0x5c0 + 0x10, 0x740)
         val json = "{\"title\":\"Synthetic\"}".toByteArray(Charsets.UTF_8)
         putBe32(bytes, 0x5c0 + 0x14, json.size)
-        val names = byteArrayOf(0) + "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+        // Entry 2: optional, unencrypted icon0.png presentation metadata.
+        val icon = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cXioAAAAASUVORK5CYII=")
+        putBe32(bytes, 0x5e0, 0x1200)
+        putBe32(bytes, 0x5e0 + 0x04, 20)
+        putBe32(bytes, 0x5e0 + 0x10, 0x780)
+        putBe32(bytes, 0x5e0 + 0x14, icon.size)
+        val names = byteArrayOf(0) +
+            "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0) +
+            "sce_sys/icon0.png".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
         names.copyInto(bytes, 0x700)
         json.copyInto(bytes, 0x740)
+        icon.copyInto(bytes, 0x780)
 
         val file = File(root, name)
         file.writeBytes(bytes)

@@ -3,6 +3,7 @@ package com.kytyps5.android
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
+import java.util.Base64
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -193,6 +194,22 @@ class GameLibraryTest {
 
 
     @Test
+    fun scanReadsMasterDataIdAndCachesUnencryptedPkgCover() {
+        makeMetadataPkg(
+            "vampire.pkg",
+            """{"localizedParameters":{"defaultLanguage":"en-US","en-US":{"titleName":"Vampire Survivors"}},"masterDataId":"PPSA00000"}""",
+        )
+        val cache = File(root, "app-cache/pkg-icons")
+        val game = (GameLibrary.scan(root, cache) as ScanResult.Found).games.single()
+
+        assertEquals("Vampire Survivors", game.title)
+        assertEquals("PPSA00000", game.titleId)
+        assertTrue(!game.launchable)
+        assertTrue(game.icon?.isFile == true)
+        assertTrue(game.icon!!.readBytes().contentEquals(onePixelPng()))
+    }
+
+    @Test
     fun scanIgnoresArbitraryFilesNamedPkg() {
         File(root, "not-a-package.pkg").writeBytes(ByteArray(256) { 0x41 })
         File(root, "another.pkg").writeText("not a PS5 package")
@@ -215,7 +232,7 @@ class GameLibraryTest {
 
     private fun makeMetadataPkg(name: String, paramJson: String): File {
         val cntOffset = 0x20000
-        val cntSize = 0x800
+        val cntSize = 0x1000
         val bytes = ByteArray(cntOffset + cntSize)
         putMagic(bytes, 0, "FIH")
         putLe64(bytes, 0x10, 0x10000L)
@@ -229,13 +246,15 @@ class GameLibraryTest {
         putLe32(bytes, 0x10020, 0x10000L)
 
         putMagic(bytes, cntOffset, "CNT")
-        putBe32(bytes, cntOffset + 0x10, 2L)
+        putBe32(bytes, cntOffset + 0x10, 3L)
         putBe32(bytes, cntOffset + 0x18, 0x5a0L)
 
-        // Entry 0: entry-name table.
+        // Entry 0: the names table. Both metadata paths are present.
+        val names = byteArrayOf(0) +
+            "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0) +
+            "sce_sys/icon0.png".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
         putBe32(bytes, cntOffset + 0x5a0, 0x0200L)
         putBe32(bytes, cntOffset + 0x5a0 + 0x10, 0x700L)
-        val names = byteArrayOf(0) + "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
         putBe32(bytes, cntOffset + 0x5a0 + 0x14, names.size.toLong())
 
         // Entry 1: plaintext param.json.
@@ -244,11 +263,24 @@ class GameLibraryTest {
         putBe32(bytes, cntOffset + 0x5c0 + 0x04, 1L)
         putBe32(bytes, cntOffset + 0x5c0 + 0x10, 0x740L)
         putBe32(bytes, cntOffset + 0x5c0 + 0x14, json.size.toLong())
+
+        // Entry 2: unencrypted icon0.png presentation metadata.
+        val icon = onePixelPng()
+        val iconOffset = 0x740 + json.size + 0x10
+        putBe32(bytes, cntOffset + 0x5e0, 0x1200L)
+        putBe32(bytes, cntOffset + 0x5e0 + 0x04, 20L)
+        putBe32(bytes, cntOffset + 0x5e0 + 0x10, iconOffset.toLong())
+        putBe32(bytes, cntOffset + 0x5e0 + 0x14, icon.size.toLong())
+
         names.copyInto(bytes, cntOffset + 0x700)
         json.copyInto(bytes, cntOffset + 0x740)
+        icon.copyInto(bytes, cntOffset + iconOffset)
 
         return File(root, name).apply { writeBytes(bytes) }
     }
+
+    private fun onePixelPng(): ByteArray =
+        Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cXioAAAAASUVORK5CYII=")
 
     private fun putMagic(bytes: ByteArray, offset: Int, magic: String) {
         bytes[offset] = 0x7f

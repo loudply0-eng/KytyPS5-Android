@@ -18,12 +18,15 @@ data class PkgCntMetadata(
     val entryCount: Int,
     val entries: List<Entry>,
     val paramJson: String?,
+    /** Unencrypted, bounded sce_sys/icon0.png payload from CNT, when present and valid. */
+    val iconPng: ByteArray? = null,
 ) {
     data class Entry(
         val id: Long,
         val name: String?,
         val dataSize: Long,
         val encrypted: Boolean,
+        val dataOffset: Long,
     )
 }
 
@@ -31,10 +34,12 @@ object PkgCntReader {
     private const val HEADER_SIZE = 0x5A0L
     private const val ENTRY_SIZE = 0x20L
     private const val ENTRY_NAMES_ID = 0x0200L
+    private const val ICON0_ID = 0x1200L
     private const val PARAM_JSON_ID = 0x2000L
     private const val MAX_ENTRIES = 65_536L
     private const val MAX_NAME_TABLE_SIZE = 4L * 1024L * 1024L
     private const val MAX_PARAM_JSON_SIZE = 1024L * 1024L
+    private const val MAX_ICON_PNG_SIZE = 4L * 1024L * 1024L
     private const val MAX_NAME_BYTES = 4096
 
     fun read(file: File, cntOffset: Long, cntSize: Long): PkgCntMetadata? {
@@ -61,6 +66,7 @@ object PkgCntReader {
                 val rawEntries = ArrayList<RawEntry>(entryCount.toInt())
                 var namesEntry: RawEntry? = null
                 var paramEntry: RawEntry? = null
+                var iconEntry: RawEntry? = null
 
                 for (index in 0 until entryCount) {
                     val recordOffset = cntOffset + tableOffset + index * ENTRY_SIZE
@@ -82,6 +88,10 @@ object PkgCntReader {
                         if (paramEntry != null) return null
                         paramEntry = entry
                     }
+                    if (id == ICON0_ID) {
+                        if (iconEntry != null) return null
+                        iconEntry = entry
+                    }
                 }
 
                 // An encrypted name table is valid metadata we cannot decode. Keep the
@@ -99,7 +109,13 @@ object PkgCntReader {
                     } else {
                         readName(nameBytes, entry.nameOffset) ?: return null
                     }
-                    PkgCntMetadata.Entry(entry.id, name, entry.dataSize, (entry.flags1 and 0x80000000L) != 0L)
+                    PkgCntMetadata.Entry(
+                        entry.id,
+                        name,
+                        entry.dataSize,
+                        (entry.flags1 and 0x80000000L) != 0L,
+                        entry.dataOffset,
+                    )
                 }
 
                 val paramJson = paramEntry?.let {
@@ -109,7 +125,20 @@ object PkgCntReader {
                     decodeUtf8(bytes) ?: return null
                 }
 
-                PkgCntMetadata(entryCount.toInt(), publicEntries, paramJson)
+                // icon0.png is a presentation asset, not game content. Read it only when the
+                // entry is explicitly unencrypted, small, and has a sane PNG header.
+                val iconPng = iconEntry?.let { entry ->
+                    if ((entry.flags1 and 0x80000000L) != 0L ||
+                        entry.dataSize !in 24L..MAX_ICON_PNG_SIZE
+                    ) {
+                        null
+                    } else {
+                        readBytes(raf, cntOffset + entry.dataOffset, entry.dataSize.toInt())
+                            .takeIf(::isPng)
+                    }
+                }
+
+                PkgCntMetadata(entryCount.toInt(), publicEntries, paramJson, iconPng)
             }
         } catch (_: IOException) {
             null
@@ -140,6 +169,26 @@ object PkgCntReader {
         raf.readFully(bytes)
         return bytes
     }
+
+    private fun isPng(bytes: ByteArray): Boolean {
+        if (bytes.size < 24) return false
+        val signature = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        )
+        if (!bytes.copyOfRange(0, 8).contentEquals(signature)) return false
+        if (readBe32(bytes, 8) != 13L ||
+            !bytes.copyOfRange(12, 16).contentEquals("IHDR".toByteArray(Charsets.US_ASCII))
+        ) return false
+        val width = readBe32(bytes, 16)
+        val height = readBe32(bytes, 20)
+        return width in 1L..4096L && height in 1L..4096L && width * height <= 16L * 1024L * 1024L
+    }
+
+    private fun readBe32(bytes: ByteArray, offset: Int): Long =
+        ((bytes[offset].toLong() and 0xffL) shl 24) or
+            ((bytes[offset + 1].toLong() and 0xffL) shl 16) or
+            ((bytes[offset + 2].toLong() and 0xffL) shl 8) or
+            (bytes[offset + 3].toLong() and 0xffL)
 
     private fun readName(table: ByteArray, offset: Long): String? {
         if (offset < 0L || offset >= table.size.toLong()) return null
