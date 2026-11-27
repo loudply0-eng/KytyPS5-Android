@@ -53,7 +53,7 @@ class PkgInspectorDialog(
         addRow(content, tr("PFS segment"), pfsSize?.let(::formatBytes) ?: tr("Not available"))
         addRow(
             content,
-            tr("PFS encryption"),
+            tr("Outer PFS encryption"),
             probe.pfsEncrypted?.let { tr(if (it) "Encrypted" else "Plaintext") } ?: tr("Not available"),
         )
         addRow(content, tr("CNT metadata segment"), probe.cntSize?.let(::formatBytes) ?: tr("Not available"))

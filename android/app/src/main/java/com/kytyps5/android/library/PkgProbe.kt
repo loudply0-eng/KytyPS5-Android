@@ -20,7 +20,7 @@ data class PkgProbeResult(
     val fihSignedByte: Int? = null,
     /** Exact PFS segment byte length from the FIH header. */
     val pfsSize: Long? = null,
-    /** PFS mode bit 2 from a readable Debug superblock; null when the superblock is encrypted. */
+    /** Outer-PFS mode bit 2 from a readable Debug superblock; null when the superblock is encrypted. */
     val pfsEncrypted: Boolean? = null,
 ) {
     enum class Kind {
