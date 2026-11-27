@@ -20,7 +20,7 @@ class GameDriverPolicyTest {
     @Test
     fun adreno8xxAutoSelectsGen8CompatibleDriver() {
         val gen7 = driver("gen7", "Turnip v26 A7XX", "v26.0.0", "a7xx")
-        val gen8 = driver("gen8", "Turnip Gen8 V37", "V37", "gen8")
+        val gen8 = driver("gen8", "Turnip_Gen8_V37", "V37", "gen8")
         assertEquals("gen8", GameDriverPolicy.selectCompatible(830, listOf(gen7, gen8))?.id)
     }
 
