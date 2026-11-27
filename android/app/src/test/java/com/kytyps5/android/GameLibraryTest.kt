@@ -99,6 +99,26 @@ class GameLibraryTest {
     }
 
     @Test
+    fun scanFindsSfoOnlyGameFoldersAndCaseInsensitiveCoverFiles() {
+        val gameDir = File(root, "Vampire Survivors")
+        val sceSys = File(gameDir, "SCE_SYS").apply { mkdirs() }
+        File(sceSys, "PARAM.SFO").writeBytes(
+            com.kytyps5.android.library.SfoFixture.build(
+                "TITLE" to "Vampire Survivors",
+                "TITLE_ID" to "PPSA00000",
+            ),
+        )
+        val icon = File(sceSys, "ICON0.PNG").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertEquals(1, result.games.size)
+        assertEquals("Vampire Survivors", result.games.single().title)
+        assertEquals("PPSA00000", result.games.single().titleId)
+        assertEquals(icon, result.games.single().icon)
+        assertTrue(result.games.single().launchable)
+    }
+
+    @Test
     fun scanFindsNestedDumpsAndTreatsAGameRootAsOneGame() {
         val outer = File(root, "PPSA21567 ASTRO BOT (01.019.000)")
         File(outer, "PPSA21567 ASTRO BOT (01.019.000)/sce_sys").mkdirs()
