@@ -194,14 +194,15 @@ class GameLibraryTest {
 
 
     @Test
-    fun scanListsRetailFihWithEncryptedOuterPfsAsMetadataOnly() {
+    fun scanListsRetailFihWithPlaintextPfsHeaderAndEncryptedData() {
         val pkg = makeMetadataPkg(
             "retail-encrypted.pkg",
             """{"titleName":"Retail Package","titleId":"PPSA12345"}""",
             signedByte = 0x80,
+            pfsSize = 0x20000L,
         )
         RandomAccessFile(pkg, "rw").use { raf ->
-            raf.seek(0x10000L)
+            raf.seek(0x20000L)
             raf.write(ByteArray(0x10000) { 0xA5.toByte() })
         }
 
@@ -251,8 +252,13 @@ class GameLibraryTest {
         assertTrue(result.games.isEmpty())
     }
 
-    private fun makeMetadataPkg(name: String, paramJson: String, signedByte: Int = 0x00): File {
-        val cntOffset = 0x20000
+    private fun makeMetadataPkg(
+        name: String,
+        paramJson: String,
+        signedByte: Int = 0x00,
+        pfsSize: Long = 0x10000L,
+    ): File {
+        val cntOffset = (0x10000L + pfsSize).toInt()
         val cntSize = 0x1000
         val bytes = ByteArray(cntOffset + cntSize)
         putMagic(bytes, 0, "FIH")

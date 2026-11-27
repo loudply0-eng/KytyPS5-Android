@@ -47,13 +47,13 @@ class PkgProbeTest {
     }
 
     @Test
-    fun preservesRetailSignedByteWithoutClaimingRetailInstallSupport() {
+    fun preservesRetailSignedByteAndReadsPlaintextPfsSuperblock() {
         val file = writeFih("retail-marker.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, signedByte = 0x80)
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
-        assertEquals(null, result.pfsEncrypted)
-        assertEquals(null, result.pfsSuperblock)
+        assertEquals(false, result.pfsEncrypted)
+        assertNotNull(result.pfsSuperblock)
     }
 
     @Test
@@ -65,18 +65,21 @@ class PkgProbeTest {
     }
 
     @Test
-    fun recognizesRetailFihWhenOuterPfsSuperblockIsEncrypted() {
-        val file = writeFih("retail-encrypted-pfs.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, signedByte = 0x80)
+    fun recognizesRetailFihWithPlaintextPfsSuperblockAndEncryptedDataBlocks() {
+        val file = writeFih("retail-encrypted-pfs.pkg", 0x10000L, 0x20000L, 0x30000L, 0x5A0L,
+            signedByte = 0x80, pfsMode = 0x000c)
         RandomAccessFile(file, "rw").use { raf ->
-            // Retail FIH encrypts the outer-PFS block that contains the superblock.
-            raf.seek(0x10000L)
+            // The 64 KiB superblock stays plaintext; later PFS data blocks are encrypted.
+            raf.seek(0x20000L)
             raf.write(ByteArray(0x10000) { 0xA5.toByte() })
         }
 
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
-        assertEquals(0x10000L, result.pfsSize)
+        assertEquals(0x20000L, result.pfsSize)
+        assertNotNull(result.pfsSuperblock)
+        assertEquals(true, result.pfsEncrypted)
     }
 
     @Test

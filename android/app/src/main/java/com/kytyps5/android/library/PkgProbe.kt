@@ -7,10 +7,9 @@ import java.io.RandomAccessFile
 /**
  * Conservative PS5 package probe.
  *
- * It validates FIH/CNT structure. Debug FIH images expose a plaintext outer-PFS
- * superblock; retail FIH images encrypt that superblock, so only their segment
- * geometry and readable CNT metadata are checked. This class never decrypts,
- * extracts, installs, or launches package content.
+ * It validates FIH/CNT structure and the plaintext outer-PFS superblock for both
+ * Debug and Retail FIH images. The PFS encryption bit describes data blocks after
+ * the readable superblock; this class never decrypts, extracts, installs, or launches package content.
  */
 data class PkgProbeResult(
     val kind: Kind,
@@ -20,7 +19,7 @@ data class PkgProbeResult(
     val fihSignedByte: Int? = null,
     /** Exact PFS segment byte length from the FIH header. */
     val pfsSize: Long? = null,
-    /** Outer-PFS mode bit 2 from a readable Debug superblock; null when the superblock is encrypted. */
+    /** Outer-PFS encryption state from the plaintext superblock (available for Debug and Retail FIH). */
     val pfsSuperblock: PfsSuperblockInfo? = null,
 ) {
     val pfsEncrypted: Boolean? get() = pfsSuperblock?.encrypted
@@ -95,14 +94,10 @@ object PkgProbe {
 
         if (fihSignedByte != 0x00 && fihSignedByte != 0x80) return malformed()
 
-        var pfsSuperblock: PfsSuperblockInfo? = null
-        if (fihSignedByte == 0x00) {
-            // Debug FIH exposes this superblock. Validate the full fixed geometry,
-            // but do not traverse inode or data blocks at this stage.
-            pfsSuperblock = PfsSuperblockReader.read(raf, pfsOffset, pfsSize) ?: return malformed()
-        }
-        // A retail FIH encrypts the outer-PFS superblock itself. Do not interpret
-        // ciphertext as a PFS header; retain only the FIH range checks and CNT probe.
+        // The first PFS block contains the readable superblock for both Debug
+        // and Retail FIH. The mode bit marks subsequent data-block encryption.
+        // Validate its fixed geometry, but do not decrypt or traverse the filesystem.
+        val pfsSuperblock = PfsSuperblockReader.read(raf, pfsOffset, pfsSize) ?: return malformed()
 
         // rangeFits proves this addition cannot overflow.
         val pfsEnd = pfsOffset + pfsSize
