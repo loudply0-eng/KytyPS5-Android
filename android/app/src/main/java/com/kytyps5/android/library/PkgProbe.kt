@@ -20,6 +20,8 @@ data class PkgProbeResult(
     val fihSignedByte: Int? = null,
     /** Exact PFS segment byte length from the FIH header. */
     val pfsSize: Long? = null,
+    /** PFS mode bit 2 from a readable Debug superblock; null when the superblock is encrypted. */
+    val pfsEncrypted: Boolean? = null,
 ) {
     enum class Kind {
         PS5_FIH,
@@ -94,18 +96,22 @@ object PkgProbe {
 
         if (fihSignedByte != 0x00 && fihSignedByte != 0x80) return malformed()
 
+        var pfsEncrypted: Boolean? = null
         if (fihSignedByte == 0x00) {
             // A debug FIH keeps the outer-PFS superblock readable. Validate only
             // stable identifiers; encrypted payload blocks remain untouched.
             raf.seek(pfsOffset)
             val pfsVersion = readLe64(raf)
             val pfsMagic = readLe64(raf)
+            raf.seek(pfsOffset + 0x1cL)
+            val pfsMode = readLe16(raf)
             raf.seek(pfsOffset + 0x20L)
             val pfsBlockSize = readLe32(raf)
             if (pfsVersion != PFS_VERSION_PS5 ||
                 pfsMagic != PFS_FORMAT_MAGIC ||
                 pfsBlockSize != PFS_BLOCK_SIZE
             ) return malformed()
+            pfsEncrypted = (pfsMode and 0x0004L) != 0L
         }
         // A retail FIH encrypts the outer-PFS superblock itself. Do not interpret
         // ciphertext as a PFS header; retain only the FIH range checks and CNT probe.
@@ -123,7 +129,7 @@ object PkgProbe {
             return malformed()
         }
 
-        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize)
+        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize, pfsEncrypted)
     }
 
     private fun malformed() =
@@ -132,6 +138,12 @@ object PkgProbe {
     private fun rangeFits(offset: Long, size: Long, containerSize: Long): Boolean {
         if (offset < 0L || size < 0L || containerSize < 0L) return false
         return offset <= containerSize && size <= containerSize - offset
+    }
+
+    private fun readLe16(raf: RandomAccessFile): Long {
+        val b0 = raf.readUnsignedByte().toLong()
+        val b1 = raf.readUnsignedByte().toLong()
+        return b0 or (b1 shl 8)
     }
 
     private fun readLe32(raf: RandomAccessFile): Long {

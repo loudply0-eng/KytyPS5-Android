@@ -51,6 +51,11 @@ class PkgInspectorDialog(
         addRow(content, tr("File size"), formatBytes(game.folder.length()))
         addRow(content, tr("FIH mode"), mode)
         addRow(content, tr("PFS segment"), pfsSize?.let(::formatBytes) ?: tr("Not available"))
+        addRow(
+            content,
+            tr("PFS encryption"),
+            probe.pfsEncrypted?.let { tr(if (it) "Encrypted" else "Plaintext") } ?: tr("Not available"),
+        )
         addRow(content, tr("CNT metadata segment"), probe.cntSize?.let(::formatBytes) ?: tr("Not available"))
         addRow(content, tr("CNT entries"), metadata?.entryCount?.toString() ?: tr("Not available"))
         addRow(content, tr("Plain entries"), plainCount.toString())

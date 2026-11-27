@@ -36,6 +36,7 @@ class PkgProbeTest {
         assertEquals(0x20000L, result.cntOffset)
         assertEquals(0x5A0L, result.cntSize)
         assertEquals(0x10000L, result.pfsSize)
+        assertEquals(false, result.pfsEncrypted)
         assertEquals(0x00, result.fihSignedByte)
     }
 
@@ -45,6 +46,15 @@ class PkgProbeTest {
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
+        assertEquals(null, result.pfsEncrypted)
+    }
+
+    @Test
+    fun recognizesDebugPfsEncryptionModeBit() {
+        val file = writeFih("encrypted-debug-pfs.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, pfsMode = 0x000c)
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(true, result.pfsEncrypted)
     }
 
     @Test
@@ -181,6 +191,7 @@ class PkgProbeTest {
         cntMagic: String = "CNT",
         fileSizeOverride: Int? = null,
         signedByte: Int = 0x00,
+        pfsMode: Int = 0x0008,
     ): File {
         val fileSize = fileSizeOverride ?: (cntOffset + cntSize).coerceAtLeast(0x10000L).toInt()
         val bytes = ByteArray(fileSize)
@@ -193,6 +204,7 @@ class PkgProbeTest {
         if (pfsOffset >= 0 && pfsOffset + 0x24L <= bytes.size.toLong()) {
             putLe64(bytes, pfsOffset.toInt(), 2L)
             putLe64(bytes, pfsOffset.toInt() + 0x08, 20130315L)
+            putLe16(bytes, pfsOffset.toInt() + 0x1c, pfsMode)
             putLe32(bytes, pfsOffset.toInt() + 0x20, 0x10000L)
         }
         if (cntOffset >= 0 && cntOffset + 4 <= bytes.size.toLong()) {
@@ -218,6 +230,11 @@ class PkgProbeTest {
             (value ushr 8).toByte(),
             value.toByte(),
         ))
+    }
+
+    private fun putLe16(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = value.toByte()
+        bytes[offset + 1] = (value ushr 8).toByte()
     }
 
     private fun putLe32(bytes: ByteArray, offset: Int, value: Long) {
