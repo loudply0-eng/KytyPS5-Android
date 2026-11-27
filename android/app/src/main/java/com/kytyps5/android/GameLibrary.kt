@@ -190,7 +190,7 @@ object GameLibrary {
             titleId = titleId,
             icon = null,
             launchable = false,
-            status = "PKG metadata · not installable",
+            status = "PKG metadata • not installable",
         )
     }
 
