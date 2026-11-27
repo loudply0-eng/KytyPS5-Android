@@ -63,8 +63,10 @@ internal class InAppUpdater(
     }
 
     fun buildPanel(): View {
+        val language = LauncherSettings(activity).language
         val panel = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
+            layoutDirection = if (LauncherI18n.isRtl(language)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             setPadding(0, 20, 0, 12)
         }
         panel.addView(TextView(activity).apply {
