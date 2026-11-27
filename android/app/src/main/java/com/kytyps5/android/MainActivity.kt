@@ -311,13 +311,17 @@ class MainActivity : Activity() {
             is ScanResult.Failure -> showMessage(result.message)
             is ScanResult.Found -> when {
                 result.games.isEmpty() ->
-                    showMessage("No games found here. Choose a folder containing game dumps (a folder with sce_sys/param.json, or a .zar or .exfat file).")
+                    showMessage("No supported games found. Discovery supports extracted sce_sys/param.json folders, .zar, .exfat, validated exFAT .img, and recognized PS5 .pkg metadata (not installable).")
                 else -> showMessage("${result.games.size} game(s) found. Tap to play, ⚙ or long-press for game settings.")
             }
         }
     }
 
     private fun launch(game: GameEntry) {
+        if (!game.launchable) {
+            showMessage(game.status ?: "This game container is recognized but cannot be launched yet.")
+            return
+        }
         val options = LaunchOptions.resolve(
             globalResolution = settings.resolution,
             globalHud = settings.hudEnabled,
