@@ -385,8 +385,9 @@ class MainActivity : Activity() {
     private fun localize(value: String): String {
         val language = settings.language
         if (value.startsWith("Emulator library: missing")) {
-            val fileName = value.substringAfter("(")
-            return LauncherI18n.translate("Emulator library: missing", language) + " (" + fileName
+            val fileName = value.substringAfter("(").substringBefore(" is not in this build)")
+            return LauncherI18n.translate("Emulator library: missing", language) +
+                " (" + fileName + LauncherI18n.translate(" is not in this build)", language)
         }
         if (value.startsWith("Scanning ")) {
             val path = value.removePrefix("Scanning ").removeSuffix(" ...")
@@ -400,7 +401,12 @@ class MainActivity : Activity() {
             )
         }
         if (value.startsWith("Could not create ")) {
-            return LauncherI18n.translate("Could not create ", language) + value.removePrefix("Could not create ")
+            val remainder = value.removePrefix("Could not create ")
+            val path = remainder.substringBefore("; choose a games folder instead.")
+            val suffix = if (remainder.contains("; choose a games folder instead.")) {
+                LauncherI18n.translate("; choose a games folder instead.", language)
+            } else ""
+            return LauncherI18n.translate("Could not create ", language) + path + suffix
         }
         return LauncherI18n.translate(value, language)
     }
