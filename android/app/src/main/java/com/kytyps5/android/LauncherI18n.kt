@@ -42,6 +42,9 @@ internal object LauncherI18n {
         return translations[value]?.getOrNull(index) ?: value
     }
 
+    internal fun hasCompleteTranslationTables(): Boolean =
+        translations.isNotEmpty() && translations.values.all { it.size == languages.size }
+
     private val translations: Map<String, List<String>> = mapOf(
         "Settings" to listOf("الإعدادات", "Settings", "Configuración", "Paramètres", "Einstellungen", "Configurações", "Настройки", "设置", "設定", "설정", "सेटिंग्स", "Ayarlar", "Impostazioni", "Pengaturan", "ترتیبات", "設定"),
         "Updates" to listOf("التحديثات", "Updates", "Actualizaciones", "Mises à jour", "Updates", "Atualizações", "Обновления", "更新", "アップデート", "업데이트", "अपडेट", "Güncellemeler", "Aggiornamenti", "Pembaruan", "اپ ڈیٹس", "更新"),
