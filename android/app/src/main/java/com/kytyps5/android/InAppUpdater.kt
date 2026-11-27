@@ -39,27 +39,27 @@ internal class InAppUpdater(
         ?.takeIf { it == UPDATE_APK_FILE }
         ?.let { File(File(activity.cacheDir, UPDATE_DIRECTORY), it).takeIf(File::isFile) }
 
-    private fun ui(english: String, arabic: String): String =
-        if (LauncherSettings(activity).language == "ar") arabic else english
+    private fun ui(english: String, arabic: String): String {
+        val language = LauncherSettings(activity).language
+        return when {
+            english.startsWith("Update available — ") ->
+                LauncherI18n.translate("Update available: ", language) + english.removePrefix("Update available — ")
+            else -> LauncherI18n.translate(english, language)
+        }
+    }
 
     private fun localizeStatus(value: String): String {
-        if (LauncherSettings(activity).language != "ar") return value
-        val translations = mapOf(
-            "APP UPDATES" to "تحديثات التطبيق",
-            "Downloading update…" to "جارٍ تنزيل التحديث…",
-            "Check for updates" to "التحقق من التحديثات",
-            "Checking the latest stable release…" to "جارٍ التحقق من أحدث إصدار مستقر…",
-            "You are using the latest version" to "أنت تستخدم أحدث إصدار",
-            "Download verified. Preparing Android installer…" to "تم التحقق من التحديث. جارٍ تجهيز مُثبّت أندرويد…",
-            "Verified update handed to Android installer. Approve it to complete installation." to "تم تسليم التحديث المُتحقق منه إلى مُثبّت أندرويد. وافق لإكمال التثبيت.",
-            UpdateErrorMessages.CHECK_FAILED to "تعذر التحقق من التحديث. حاول مرة أخرى لاحقاً.",
-            UpdateErrorMessages.DOWNLOAD_FAILED to "تعذر تنزيل التحديث أو التحقق من سلامته.",
-            UpdateErrorMessages.INSTALLER_FAILED to "تعذر فتح مُثبّت أندرويد."
-        )
-        translations[value]?.let { return it }
-        if (value.startsWith("Installed version: ")) return "الإصدار المثبّت: " + value.removePrefix("Installed version: ")
-        if (value.startsWith("Update available: ")) return "يتوفر تحديث: " + value.removePrefix("Update available: ")
-        return value
+        val language = LauncherSettings(activity).language
+        return when {
+            value.startsWith("Installed version: ") ->
+                LauncherI18n.translate("Installed version: ", language) + value.removePrefix("Installed version: ")
+            value.startsWith("Update available: ") ->
+                LauncherI18n.translate("Update available: ", language) + value.removePrefix("Update available: ")
+            value.startsWith("You are using the latest version (") ->
+                LauncherI18n.translate("You are using the latest version", language) +
+                    value.substringAfter("You are using the latest version")
+            else -> LauncherI18n.translate(value, language)
+        }
     }
 
     fun buildPanel(): View {
@@ -188,7 +188,14 @@ internal class InAppUpdater(
                     AlertDialog.Builder(activity)
                         .setTitle(ui("Update available — $tag", "يتوفر تحديث — $tag"))
                         .setMessage(
-                            ui("Current version: ${installedVersionName()}\nNew version: $tag\n\n$notes\n\nThe APK will be downloaded and checked before the Android installer opens.", "الإصدار الحالي: ${installedVersionName()}\nالإصدار الجديد: $tag\n\n$notes\n\nسيتم تنزيل ملف التطبيق والتحقق منه قبل فتح مُثبّت أندرويد.")
+                            LauncherI18n.translate("Current version: ", LauncherSettings(activity).language) +
+                                installedVersionName() + "\n" +
+                                LauncherI18n.translate("New version: ", LauncherSettings(activity).language) +
+                                tag + "\n\n" + notes + "\n\n" +
+                                LauncherI18n.translate(
+                                    "The APK will be downloaded and checked before the Android installer opens.",
+                                    LauncherSettings(activity).language,
+                                )
                         )
                         .setNegativeButton(ui("Later", "لاحقاً"), null)
                         .setPositiveButton(ui("Download and install", "تنزيل وتثبيت")) { _, _ ->
