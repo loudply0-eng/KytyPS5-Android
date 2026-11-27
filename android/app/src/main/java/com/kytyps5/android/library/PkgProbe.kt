@@ -118,10 +118,18 @@ object PkgProbe {
     private fun malformed() =
         PkgProbeResult(PkgProbeResult.Kind.MALFORMED_PS5_PKG)
 
+    private fun readLe64(raf: RandomAccessFile): Long {
+        val bytes = ByteArray(8)
+        raf.readFully(bytes)
+        var value = 0L
+        for (index in bytes.indices) {
+            value = value or ((bytes[index].toLong() and 0xffL) shl (index * 8))
+        }
+        return value
+    }
+
     private fun rangeFits(offset: Long, size: Long, containerSize: Long): Boolean {
         if (offset < 0L || size < 0L || containerSize < 0L) return false
         return offset <= containerSize && size <= containerSize - offset
     }
-
-
 }
