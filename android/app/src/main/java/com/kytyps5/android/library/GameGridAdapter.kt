@@ -14,6 +14,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.kytyps5.android.GameEntry
+import com.kytyps5.android.LauncherI18n
+import com.kytyps5.android.LauncherSettings
 import com.kytyps5.android.GameLibrary
 
 /**
@@ -48,7 +50,8 @@ class GameGridAdapter(
         val holder = view.tag as Holder
         val game = games[position]
         holder.title.text = game.title
-        holder.subtitle.text = game.status ?: game.titleId ?: if (game.folder.isFile) GameLibrary.imageLabel(game.folder) else ""
+        val subtitle = game.status ?: game.titleId ?: if (game.folder.isFile) GameLibrary.imageLabel(game.folder) else ""
+        holder.subtitle.text = LauncherI18n.translate(subtitle, LauncherSettings(context).language)
         holder.placeholder.text = initials(game.title)
         holder.placeholder.visibility = View.GONE
         covers.load(game.icon, holder.cover) { holder.placeholder.visibility = View.VISIBLE }
