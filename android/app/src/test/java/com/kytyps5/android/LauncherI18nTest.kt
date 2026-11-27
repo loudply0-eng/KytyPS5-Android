@@ -44,6 +44,8 @@ class LauncherI18nTest {
             "Check for updates",
             "Download and install",
             "Cancel",
+            "Play",
+            "Metadata only",
             "PKG metadata • not installable",
             "exFAT image",
             "exFAT disk image",
