@@ -100,6 +100,7 @@ class SettingsActivity : Activity() {
         // Explicit child layout params prevent the ScrollView from measuring the content as a
         // viewport-sized child, which can make the lower settings appear unreachable.
         return ScrollView(this).apply {
+            layoutDirection = root.layoutDirection
             isFillViewport = true
             isSmoothScrollingEnabled = true
             isVerticalScrollBarEnabled = true
