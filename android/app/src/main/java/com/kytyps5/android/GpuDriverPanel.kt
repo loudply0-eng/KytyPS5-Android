@@ -51,8 +51,9 @@ class GpuDriverPanel(
     fun driverDirFor(gamePath: String): String? {
         val override = settings.gameGpuDriverOverride(gamePath)
         val selectedId = if (override == GameDriverPolicy.AUTO_DRIVER_ID) {
-            // Use an already-installed driver marked compatible for this Adreno; otherwise follow global.
-            GameDriverPolicy.selectCompatible(detectAdreno(), store.list())?.id ?: settings.gpuDriverId
+            // EGL probing is performed during background startup, never on the launch/UI thread.
+            val detectedModel = if (adrenoProbed) adrenoModel else null
+            GameDriverPolicy.selectCompatible(detectedModel, store.list())?.id ?: settings.gpuDriverId
         } else {
             GpuDriverChoice.resolve(settings.gpuDriverId, override) { store.find(it) != null }
         }
@@ -130,6 +131,9 @@ class GpuDriverPanel(
         }
         return adrenoModel
     }
+
+    /** Warm the EGL/GPU probe from a worker thread before the user launches a game. */
+    fun warmUpAdrenoDetection(): Int? = detectAdreno()
 
     private fun openBrowser() {
         DriverBrowserDialog(activity, store, ::detectAdreno) { driver, useNow ->
