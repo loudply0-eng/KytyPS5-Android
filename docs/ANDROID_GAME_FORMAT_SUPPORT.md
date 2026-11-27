@@ -6,11 +6,13 @@ This document describes what the launcher can recognize today. A file extension 
 
 | Format | Discovery / validation | Launch status |
 |---|---|---|
-| Extracted game folder | Recognizes a folder containing `sce_sys/param.json`; reads title and title ID, with `param.sfo` fallback | Passed to the existing Kyty launch path; actual game compatibility remains title/device dependent |
+| Extracted game folder | Recognizes `sce_sys/param.json` or `sce_sys/param.sfo` (case-insensitive); reads title/title ID and resolves `sce_sys/icon0.png` case-insensitively | A visible per-game **Play** button calls the Kyty launch path; actual compatibility remains title/device dependent |
 | `.zar` | Listed as a ZArchive image | Passed to the existing archive mount path |
 | `.exfat` | Listed as an exFAT image | Passed to the existing exFAT mount path |
 | `.img` | Listed only when a bounded content probe confirms a raw, MBR-partitioned, or GPT-partitioned exFAT volume | Passed to the exFAT mount path; arbitrary ISO/raw images are not accepted |
 | `.pkg` | Validates PS5 FIH outer-header, PFS/CNT ranges and plaintext CNT metadata; reads unencrypted `param.json` when present | **Metadata only — not installable or launchable** |
+
+The game grid displays `icon0.png` when available; when the dump has no usable cover image it displays a title-initial fallback rather than a blank cover. The per-game Play button is enabled only for launchable entries.
 
 The PKG reader does not decrypt PFS/PFSC payloads, decrypt encrypted metadata, extract package files, install packages, process licences/keys, bypass DRM, or invoke the emulator with a PKG. LIH is signature recognition only and is not treated as a validated installable package. Invalid files renamed to `.pkg` are ignored.
 
