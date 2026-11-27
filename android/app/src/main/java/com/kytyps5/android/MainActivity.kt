@@ -321,7 +321,7 @@ class MainActivity : Activity() {
 
     private fun launch(game: GameEntry) {
         if (!game.launchable) {
-            showMessage(game.status ?: "This game container is recognized but cannot be launched yet.")
+            showPkgDetails(game)
             return
         }
         val options = LaunchOptions.resolve(
@@ -343,6 +343,28 @@ class MainActivity : Activity() {
                 .putExtra(LaunchArgs.EXTRA_HUD, options.hud)
                 .putExtra(LaunchArgs.EXTRA_TOUCH_CONTROLS, options.touchControls),
         )
+    }
+
+    /** Inspect a recognized PKG off the UI thread; never send the PKG itself to the emulator. */
+    private fun showPkgDetails(game: GameEntry) {
+        if (!game.folder.isFile || !game.folder.extension.equals("pkg", ignoreCase = true)) {
+            showMessage(game.status ?: "This container is recognized but cannot be launched yet.")
+            return
+        }
+        showMessage("Reading package metadata…")
+        worker.execute {
+            val probe = com.kytyps5.android.library.PkgProbe.probe(game.folder)
+            val metadata = com.kytyps5.android.library.PkgProbe.readMetadata(game.folder)
+            mainHandler.post {
+                if (!isFinishing && !isDestroyed) {
+                    if (probe.kind == com.kytyps5.android.library.PkgProbeResult.Kind.PS5_FIH) {
+                        com.kytyps5.android.library.PkgInspectorDialog(this, settings).show(game, probe, metadata)
+                    } else {
+                        showMessage("The PKG file changed or failed validation. Rescan the games folder.")
+                    }
+                }
+            }
+        }
     }
 
     private fun toggle(text: String, checked: Boolean, onChange: (Boolean) -> Unit) = CheckBox(this).apply {
