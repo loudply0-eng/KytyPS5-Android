@@ -200,11 +200,16 @@ class GameLibraryTest {
             """{"titleName":"Retail Package","titleId":"PPSA12345"}""",
             signedByte = 0x80,
             pfsSize = 0x20000L,
+            pfsMode = 0x000c,
         )
         RandomAccessFile(pkg, "rw").use { raf ->
             raf.seek(0x20000L)
             raf.write(ByteArray(0x10000) { 0xA5.toByte() })
         }
+
+        val probe = com.kytyps5.android.library.PkgProbe.probe(pkg)
+        assertEquals(0x20000L, probe.pfsSize)
+        assertEquals(true, probe.pfsEncrypted)
 
         val game = (GameLibrary.scan(root) as ScanResult.Found).games.single()
         assertEquals("Retail Package", game.title)
@@ -257,6 +262,7 @@ class GameLibraryTest {
         paramJson: String,
         signedByte: Int = 0x00,
         pfsSize: Long = 0x10000L,
+        pfsMode: Int = 0x0008,
     ): File {
         val cntOffset = (0x10000L + pfsSize).toInt()
         val cntSize = 0x1000
@@ -274,6 +280,8 @@ class GameLibraryTest {
         // The PFS mode bit (when set) applies to later data blocks, not this header block.
         putLe64(bytes, 0x10000, 2L)
         putLe64(bytes, 0x10008, 20130315L)
+        bytes[0x1001c] = pfsMode.toByte()
+        bytes[0x1001d] = (pfsMode ushr 8).toByte()
         putLe32(bytes, 0x10020, 0x10000L)
 
         putMagic(bytes, cntOffset, "CNT")
