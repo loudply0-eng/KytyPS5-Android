@@ -47,11 +47,17 @@ class LauncherI18nTest {
         )
         LauncherI18n.languages.forEach { language ->
             keys.forEach { key ->
-                assertNotEquals(
-                    "Missing " + language.code + " translation for '" + key + "'",
-                    key,
-                    LauncherI18n.translate(key, language.code),
-                )
+                val translated = LauncherI18n.translate(key, language.code)
+                if (language.code == "en") {
+                    // English is the source language, so an unchanged value is expected.
+                    assertEquals("English source text changed for '$key'", key, translated)
+                } else {
+                    assertNotEquals(
+                        "Missing " + language.code + " translation for '" + key + "'",
+                        key,
+                        translated,
+                    )
+                }
             }
         }
     }
