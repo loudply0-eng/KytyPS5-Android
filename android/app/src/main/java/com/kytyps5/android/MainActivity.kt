@@ -88,6 +88,8 @@ class MainActivity : Activity() {
     private fun applyDefaultGpuDriver() {
         val setup = DefaultGpuDriverSetup(this, settings, drivers.store)
         worker.execute {
+            // Run EGL renderer detection on the worker before per-game Auto driver resolution is used.
+            drivers.warmUpAdrenoDetection()
             val changed = setup.apply() ?: return@execute
             mainHandler.post {
                 drivers.refresh()
