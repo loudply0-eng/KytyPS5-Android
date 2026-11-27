@@ -1,6 +1,7 @@
 package com.kytyps5.android
 
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import org.json.JSONObject
 import org.junit.After
@@ -154,6 +155,99 @@ class GameLibraryTest {
         assertEquals("From SFO", game.title)
         assertEquals("CUSA00001", game.titleId)
         assertEquals(null, game.icon)
+    }
+
+
+    @Test
+    fun scanListsValidatedPkgAsMetadataOnlyEntry() {
+        val pkg = makeMetadataPkg("ASTRO.pkg", """{"titleName":"ASTRO BOT","titleId":"PPSA21567"}""")
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertEquals(listOf("ASTRO BOT"), result.games.map { it.title })
+        assertEquals(pkg.absolutePath, result.games.single().path)
+        assertEquals("PPSA21567", result.games.single().titleId)
+        assertTrue(!result.games.single().launchable)
+        assertEquals("PKG metadata • not installable", result.games.single().status)
+    }
+
+
+
+    @Test
+    fun scanIgnoresArbitraryFilesNamedPkg() {
+        File(root, "not-a-package.pkg").writeBytes(ByteArray(256) { 0x41 })
+        File(root, "another.pkg").writeText("not a PS5 package")
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertTrue(result.games.isEmpty())
+    }
+
+    @Test
+    fun scanIgnoresFihWhenCntSegmentIsMalformed() {
+        val pkg = makeMetadataPkg("broken-cnt.pkg", """{"titleName":"Must Not Appear"}""")
+        RandomAccessFile(pkg, "rw").use { raf ->
+            raf.seek(0x20000L)
+            raf.write(byteArrayOf(0x7f, 0x42, 0x41, 0x44))
+        }
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertTrue(result.games.isEmpty())
+    }
+
+    private fun makeMetadataPkg(name: String, paramJson: String): File {
+        val cntOffset = 0x20000
+        val cntSize = 0x800
+        val bytes = ByteArray(cntOffset + cntSize)
+        putMagic(bytes, 0, "FIH")
+        putLe64(bytes, 0x10, 0x10000L)
+        putLe64(bytes, 0x18, 0x10000L)
+        putLe64(bytes, 0x58, cntOffset.toLong())
+        putLe64(bytes, 0xa0, cntSize.toLong())
+
+        // Plaintext outer PFS superblock identifiers used by the conservative probe.
+        putLe64(bytes, 0x10000, 2L)
+        putLe64(bytes, 0x10008, 20130315L)
+        putLe32(bytes, 0x10020, 0x10000L)
+
+        putMagic(bytes, cntOffset, "CNT")
+        putBe32(bytes, cntOffset + 0x10, 2L)
+        putBe32(bytes, cntOffset + 0x18, 0x5a0L)
+
+        // Entry 0: entry-name table.
+        putBe32(bytes, cntOffset + 0x5a0, 0x0200L)
+        putBe32(bytes, cntOffset + 0x5a0 + 0x10, 0x700L)
+        val names = byteArrayOf(0) + "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+        putBe32(bytes, cntOffset + 0x5a0 + 0x14, names.size.toLong())
+
+        // Entry 1: plaintext param.json.
+        val json = paramJson.toByteArray(Charsets.UTF_8)
+        putBe32(bytes, cntOffset + 0x5c0, 0x2000L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x04, 1L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x10, 0x740L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x14, json.size.toLong())
+        names.copyInto(bytes, cntOffset + 0x700)
+        json.copyInto(bytes, cntOffset + 0x740)
+
+        return File(root, name).apply { writeBytes(bytes) }
+    }
+
+    private fun putMagic(bytes: ByteArray, offset: Int, magic: String) {
+        bytes[offset] = 0x7f
+        magic.forEachIndexed { index, char -> bytes[offset + index + 1] = char.code.toByte() }
+    }
+
+    private fun putLe64(bytes: ByteArray, offset: Int, value: Long) {
+        repeat(8) { index -> bytes[offset + index] = (value ushr (index * 8)).toByte() }
+    }
+
+    private fun putLe32(bytes: ByteArray, offset: Int, value: Long) {
+        repeat(4) { index -> bytes[offset + index] = (value ushr (index * 8)).toByte() }
+    }
+
+    private fun putBe32(bytes: ByteArray, offset: Int, value: Long) {
+        bytes[offset] = (value ushr 24).toByte()
+        bytes[offset + 1] = (value ushr 16).toByte()
+        bytes[offset + 2] = (value ushr 8).toByte()
+        bytes[offset + 3] = value.toByte()
     }
 
     private fun makeGame(folderName: String, paramJson: String?) {
