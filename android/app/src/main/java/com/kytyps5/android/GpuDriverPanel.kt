@@ -48,22 +48,37 @@ class GpuDriverPanel(
     }
 
     /** Driver directory for [gamePath] (per-game override, else global), or null for the system driver. */
-    fun driverDirFor(gamePath: String): String? =
-        GpuDriverChoice.resolve(settings.gpuDriverId, settings.gameGpuDriverOverride(gamePath)) {
-            store.find(it) != null
-        }?.let { store.find(it)?.directory?.absolutePath }
+    fun driverDirFor(gamePath: String): String? {
+        val override = settings.gameGpuDriverOverride(gamePath)
+        val selectedId = if (override == GameDriverPolicy.AUTO_DRIVER_ID) {
+            // Use an already-installed driver marked compatible for this Adreno; otherwise follow global.
+            GameDriverPolicy.selectCompatible(detectAdreno(), store.list())?.id ?: settings.gpuDriverId
+        } else {
+            GpuDriverChoice.resolve(settings.gpuDriverId, override) { store.find(it) != null }
+        }
+        return selectedId?.takeIf { it != LauncherSettings.SYSTEM_DRIVER }
+            ?.let { store.find(it)?.directory?.absolutePath }
+    }
 
     /** Short label for a game row's driver button. */
     fun gameButtonText(gamePath: String): String {
         val override = settings.gameGpuDriverOverride(gamePath) ?: return tr("Driver: global")
-        return tr("Driver: ") + nameOf(override)
+        return if (override == GameDriverPolicy.AUTO_DRIVER_ID) {
+            tr("Driver: Auto (GPU-compatible)")
+        } else {
+            tr("Driver: ") + nameOf(override)
+        }
     }
 
     /** Per-game override dialog: follow global, system driver, or one imported driver. */
     fun chooseForGame(game: GameEntry, onChosen: () -> Unit) {
         val drivers = store.list()
-        val labels = listOf(tr("Use global (") + nameOf(settings.gpuDriverId) + ")", tr(SYSTEM_LABEL)) + drivers.map { it.label }
-        val values = listOf<String?>(null, LauncherSettings.SYSTEM_DRIVER) + drivers.map { it.id }
+        val labels = listOf(
+            tr("Auto (GPU-compatible)"),
+            tr("Use global (") + nameOf(settings.gpuDriverId) + ")",
+            tr(SYSTEM_LABEL),
+        ) + drivers.map { it.label }
+        val values = listOf<String?>(GameDriverPolicy.AUTO_DRIVER_ID, null, LauncherSettings.SYSTEM_DRIVER) + drivers.map { it.id }
         val checked = values.indexOf(settings.gameGpuDriverOverride(game.path)).coerceAtLeast(0)
         AlertDialog.Builder(activity)
             .setTitle(tr("GPU driver for ") + game.title)
@@ -183,8 +198,11 @@ class GpuDriverPanel(
         current.text = tr("GPU driver: ") + nameOf(settings.gpuDriverId)
     }
 
-    private fun nameOf(id: String): String =
-        if (id == LauncherSettings.SYSTEM_DRIVER) tr(SYSTEM_LABEL) else store.find(id)?.label ?: tr(SYSTEM_LABEL) + " (missing: $id)"
+    private fun nameOf(id: String): String = when (id) {
+        GameDriverPolicy.AUTO_DRIVER_ID -> tr("Auto (GPU-compatible)")
+        LauncherSettings.SYSTEM_DRIVER -> tr(SYSTEM_LABEL)
+        else -> store.find(id)?.label ?: tr(SYSTEM_LABEL) + " (missing: $id)"
+    }
 
     private fun button(text: String, onClick: () -> Unit) = Button(activity).apply {
         this.text = text
