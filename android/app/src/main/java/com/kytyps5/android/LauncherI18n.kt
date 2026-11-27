@@ -188,5 +188,9 @@ internal object LauncherI18n {
 
         "hidden" to listOf("مخفي", "hidden", "oculto", "masqué", "ausgeblendet", "oculto", "скрыто", "隐藏", "非表示", "숨김", "छिपा हुआ", "gizli", "nascosto", "tersembunyi", "چھپا ہوا", "隱藏"),
         "opacity" to listOf("الشفافية", "opacity", "opacidad", "opacité", "Deckkraft", "opacidade", "непрозрачность", "不透明度", "不透明度", "불투명도", "अपारदर्शिता", "opaklık", "opacità", "opasitas", "شفافیت", "不透明度"),
+
+        " is not in this build)" to listOf(" غير موجودة في هذا البناء)", " is not in this build)", " no está incluido en esta compilación)", " n’est pas inclus dans cette version)", " ist in diesem Build nicht enthalten)", " não está incluído nesta compilação)", " отсутствует в этой сборке)", "未包含在此构建中）", "このビルドには含まれていません）", "이 빌드에 포함되어 있지 않습니다)", "इस बिल्ड में शामिल नहीं है)", "bu derlemede bulunmuyor)", " non è incluso in questa build)", " tidak disertakan dalam build ini)", " اس بلڈ میں شامل نہیں ہے)", "未包含於此版本）"),
+        "; choose a games folder instead." to listOf("؛ اختر مجلد ألعاب بدلاً منه.", "; choose a games folder instead.", "; elige otra carpeta de juegos.", "; choisissez plutôt un dossier de jeux.", "; wähle stattdessen einen Spieleordner.", "; escolha outra pasta de jogos.", "; выберите другую папку с играми.", "；请改为选择游戏文件夹。", "。代わりにゲームフォルダーを選択してください。", " 대신 게임 폴더를 선택하세요.", "；इसके बजाय गेम फ़ोल्डर चुनें।", "; bunun yerine bir oyun klasörü seçin.", "; scegli invece una cartella dei giochi.", "; pilih folder game lain.", "؛ اس کے بجائے گیمز فولڈر منتخب کریں۔", "；請改為選擇遊戲資料夾。"),
+        "mismatch" to listOf("غير متطابق", "mismatch", "no coincide", "ne correspond pas", "stimmt nicht überein", "não corresponde", "не совпадает", "不匹配", "不一致", "일치하지 않음", "मेल नहीं खाता", "eşleşmiyor", "non corrisponde", "tidak cocok", "مطابقت نہیں رکھتا", "不相符"),
     )
 }
