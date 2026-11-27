@@ -37,6 +37,12 @@ class PkgProbeTest {
         assertEquals(0x5A0L, result.cntSize)
         assertEquals(0x10000L, result.pfsSize)
         assertEquals(false, result.pfsEncrypted)
+        assertEquals(0x10000L, result.pfsSuperblock?.blockSize)
+        assertEquals(1L, result.pfsSuperblock?.inodeCount)
+        assertEquals(8L, result.pfsSuperblock?.dataBlockCount)
+        assertEquals(1L, result.pfsSuperblock?.inodeBlockCount)
+        assertEquals(0L, result.pfsSuperblock?.superRootInode)
+        assertEquals(true, result.pfsSuperblock?.caseInsensitive)
         assertEquals(0x00, result.fihSignedByte)
     }
 
@@ -47,6 +53,7 @@ class PkgProbeTest {
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
         assertEquals(null, result.pfsEncrypted)
+        assertEquals(null, result.pfsSuperblock)
     }
 
     @Test
@@ -70,6 +77,26 @@ class PkgProbeTest {
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
         assertEquals(0x10000L, result.pfsSize)
+    }
+
+    @Test
+    fun rejectsInvalidPfsBlockSize() {
+        val file = writeFih("invalid-pfs-block-size.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L)
+        RandomAccessFile(file, "rw").use { raf ->
+            raf.seek(0x10000L + 0x20L)
+            raf.write(byteArrayOf(0x00, 0x80, 0x01, 0x00)) // 0x18000, not a power of two.
+        }
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+    }
+
+    @Test
+    fun rejectsPfsSuperRootOutsideInodeTable() {
+        val file = writeFih("bad-pfs-superroot.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L)
+        RandomAccessFile(file, "rw").use { raf ->
+            raf.seek(0x10000L + 0x48L)
+            raf.write(ByteArray(8) { if (it == 0) 1 else 0 })
+        }
+        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
 
     @Test
@@ -206,6 +233,12 @@ class PkgProbeTest {
             putLe64(bytes, pfsOffset.toInt() + 0x08, 20130315L)
             putLe16(bytes, pfsOffset.toInt() + 0x1c, pfsMode)
             putLe32(bytes, pfsOffset.toInt() + 0x20, 0x10000L)
+            putLe32(bytes, pfsOffset.toInt() + 0x24, 0L)
+            putLe64(bytes, pfsOffset.toInt() + 0x28, 1L)
+            putLe64(bytes, pfsOffset.toInt() + 0x30, 1L)
+            putLe64(bytes, pfsOffset.toInt() + 0x38, 8L)
+            putLe64(bytes, pfsOffset.toInt() + 0x40, 1L)
+            putLe64(bytes, pfsOffset.toInt() + 0x48, 0L)
         }
         if (cntOffset >= 0 && cntOffset + 4 <= bytes.size.toLong()) {
             putMagicAt(bytes, cntOffset.toInt(), cntMagic)

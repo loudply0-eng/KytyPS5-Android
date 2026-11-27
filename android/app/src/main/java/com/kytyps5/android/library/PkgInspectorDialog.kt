@@ -56,6 +56,13 @@ class PkgInspectorDialog(
             tr("Outer PFS encryption"),
             probe.pfsEncrypted?.let { tr(if (it) "Encrypted" else "Plaintext") } ?: tr("Not available"),
         )
+        probe.pfsSuperblock?.let { pfs ->
+            addRow(content, tr("PFS block size"), formatBytes(pfs.blockSize))
+            addRow(content, tr("PFS inode count"), pfs.inodeCount.toString())
+            addRow(content, tr("PFS data blocks"), pfs.dataBlockCount.toString())
+            addRow(content, tr("PFS inode blocks"), pfs.inodeBlockCount.toString())
+            addRow(content, tr("PFS super-root inode"), pfs.superRootInode.toString())
+        }
         addRow(content, tr("CNT metadata segment"), probe.cntSize?.let(::formatBytes) ?: tr("Not available"))
         addRow(content, tr("CNT entries"), metadata?.entryCount?.toString() ?: tr("Not available"))
         addRow(content, tr("Plain entries"), plainCount.toString())

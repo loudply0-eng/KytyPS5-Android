@@ -21,8 +21,9 @@ data class PkgProbeResult(
     /** Exact PFS segment byte length from the FIH header. */
     val pfsSize: Long? = null,
     /** Outer-PFS mode bit 2 from a readable Debug superblock; null when the superblock is encrypted. */
-    val pfsEncrypted: Boolean? = null,
+    val pfsSuperblock: PfsSuperblockInfo? = null,
 ) {
+    val pfsEncrypted: Boolean? get() = pfsSuperblock?.encrypted
     enum class Kind {
         PS5_FIH,
         PS5_LIH,
@@ -41,8 +42,6 @@ object PkgProbe {
     private const val FIH_CNT_SIZE_FIELD = 0xA0L
     private const val REQUIRED_PFS_OFFSET = 0x10000L
     private const val PFS_BLOCK_SIZE = 0x10000L
-    private const val PFS_VERSION_PS5 = 2L
-    private const val PFS_FORMAT_MAGIC = 20130315L
     private const val CNT_HEADER_MIN_SIZE = 0x5A0L
 
     fun probe(file: File): PkgProbeResult {
@@ -96,22 +95,11 @@ object PkgProbe {
 
         if (fihSignedByte != 0x00 && fihSignedByte != 0x80) return malformed()
 
-        var pfsEncrypted: Boolean? = null
+        var pfsSuperblock: PfsSuperblockInfo? = null
         if (fihSignedByte == 0x00) {
-            // A debug FIH keeps the outer-PFS superblock readable. Validate only
-            // stable identifiers; encrypted payload blocks remain untouched.
-            raf.seek(pfsOffset)
-            val pfsVersion = readLe64(raf)
-            val pfsMagic = readLe64(raf)
-            raf.seek(pfsOffset + 0x1cL)
-            val pfsMode = readLe16(raf)
-            raf.seek(pfsOffset + 0x20L)
-            val pfsBlockSize = readLe32(raf)
-            if (pfsVersion != PFS_VERSION_PS5 ||
-                pfsMagic != PFS_FORMAT_MAGIC ||
-                pfsBlockSize != PFS_BLOCK_SIZE
-            ) return malformed()
-            pfsEncrypted = (pfsMode and 0x0004L) != 0L
+            // Debug FIH exposes this superblock. Validate the full fixed geometry,
+            // but do not traverse inode or data blocks at this stage.
+            pfsSuperblock = PfsSuperblockReader.read(raf, pfsOffset, pfsSize) ?: return malformed()
         }
         // A retail FIH encrypts the outer-PFS superblock itself. Do not interpret
         // ciphertext as a PFS header; retain only the FIH range checks and CNT probe.
@@ -129,7 +117,7 @@ object PkgProbe {
             return malformed()
         }
 
-        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize, pfsEncrypted)
+        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize, pfsSuperblock)
     }
 
     private fun malformed() =
@@ -140,27 +128,5 @@ object PkgProbe {
         return offset <= containerSize && size <= containerSize - offset
     }
 
-    private fun readLe16(raf: RandomAccessFile): Long {
-        val b0 = raf.readUnsignedByte().toLong()
-        val b1 = raf.readUnsignedByte().toLong()
-        return b0 or (b1 shl 8)
-    }
 
-    private fun readLe32(raf: RandomAccessFile): Long {
-        val b0 = raf.readUnsignedByte().toLong()
-        val b1 = raf.readUnsignedByte().toLong()
-        val b2 = raf.readUnsignedByte().toLong()
-        val b3 = raf.readUnsignedByte().toLong()
-        return b0 or (b1 shl 8) or (b2 shl 16) or (b3 shl 24)
-    }
-
-    private fun readLe64(raf: RandomAccessFile): Long {
-        val bytes = ByteArray(8)
-        raf.readFully(bytes)
-        var value = 0L
-        for (i in 0 until 8) {
-            value = value or ((bytes[i].toLong() and 0xffL) shl (i * 8))
-        }
-        return value
-    }
 }
