@@ -9,6 +9,8 @@ import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.kytyps5.android.LauncherI18n
+import com.kytyps5.android.LauncherSettings
 
 /**
  * In-game layout editor bar (the overlay-edit flow of Vita3K's OverlayLayoutEditorDialog and RPCSX's
@@ -24,6 +26,8 @@ class ControllerEditor(
 ) {
     private val density = activity.resources.displayMetrics.density
     private val Int.dp: Int get() = (this * density).toInt()
+    private val language = LauncherSettings(activity).language
+    private fun tr(value: String): String = LauncherI18n.translate(value, language)
     private var original: OverlayLayout = overlay.layout
     private val status = TextView(activity).apply {
         setTextColor(Color.WHITE)
@@ -33,6 +37,7 @@ class ControllerEditor(
 
     val view: View = HorizontalScrollView(activity).apply {
         visibility = View.GONE
+        layoutDirection = if (LauncherI18n.isRtl(language)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
         background = GradientDrawable().apply {
             setColor(Color.argb(210, 16, 16, 20))
             cornerRadius = 12f * density
@@ -45,13 +50,13 @@ class ControllerEditor(
                 addView(status)
                 addView(button("−") { resize(-SCALE_STEP) })
                 addView(button("+") { resize(SCALE_STEP) })
-                addView(button("Hide/Show") { toggleVisible() })
-                addView(button("Opacity −") { opacity(-OPACITY_STEP) })
-                addView(button("Opacity +") { opacity(OPACITY_STEP) })
-                addView(button("Reset") { reset() })
-                if (gamePath != null) addView(button("Save for game") { save(gamePath) })
-                addView(button("Save default") { save(null) })
-                addView(button("Cancel") { cancel() })
+                addView(button(tr("Hide/Show")) { toggleVisible() })
+                addView(button(tr("Opacity −")) { opacity(-OPACITY_STEP) })
+                addView(button(tr("Opacity +")) { opacity(OPACITY_STEP) })
+                addView(button(tr("Reset")) { reset() })
+                if (gamePath != null) addView(button(tr("Save for game")) { save(gamePath) })
+                addView(button(tr("Save default")) { save(null) })
+                addView(button(tr("Cancel")) { cancel() })
             },
         )
     }
@@ -76,7 +81,7 @@ class ControllerEditor(
     private fun toggleVisible() = editSelected { it.copy(visible = !it.visible) }
 
     private fun editSelected(change: (ControlPlacement) -> ControlPlacement) {
-        val control = overlay.selected ?: return updateStatus("Tap a control first.")
+        val control = overlay.selected ?: return updateStatus(tr("Tap a control first."))
         overlay.layout = overlay.layout.with(control, change(overlay.layout.placement(control)))
         updateStatus()
     }
@@ -88,13 +93,13 @@ class ControllerEditor(
 
     private fun reset() {
         overlay.layout = OverlayLayout.DEFAULT.withOpacity(overlay.layout.opacity)
-        updateStatus("Reset to the default layout (not saved yet).")
+        updateStatus(tr("Reset to the default layout (not saved yet)."))
     }
 
     private fun save(forGame: String?) {
         val ok = store.save(overlay.layout, forGame)
         close()
-        if (!ok) android.widget.Toast.makeText(activity, "Could not save the controller layout.", android.widget.Toast.LENGTH_LONG).show()
+        if (!ok) android.widget.Toast.makeText(activity, tr("Could not save the controller layout."), android.widget.Toast.LENGTH_LONG).show()
     }
 
     private fun cancel() {
@@ -112,9 +117,9 @@ class ControllerEditor(
         val control = overlay.selected
         val selection = control?.let {
             val p = overlay.layout.placement(it)
-            "${it.label} ${(p.scale * 100).toInt()}%${if (p.visible) "" else " (hidden)"}"
-        } ?: "Drag a control"
-        status.text = message ?: "$selection · opacity ${(overlay.layout.opacity * 100).toInt()}%"
+            "${it.label} ${(p.scale * 100).toInt()}%${if (p.visible) "" else " (" + tr("hidden") + ")"}"
+        } ?: tr("Drag a control")
+        status.text = message ?: "$selection · " + tr("opacity") + " ${(overlay.layout.opacity * 100).toInt()}%"
     }
 
     private fun button(label: String, onClick: () -> Unit) = Button(activity).apply {
