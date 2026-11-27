@@ -280,7 +280,7 @@ class GameLibraryTest {
     }
 
     private fun onePixelPng(): ByteArray =
-        Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cXioAAAAASUVORK5CYII=")
+        Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==")
 
     private fun putMagic(bytes: ByteArray, offset: Int, magic: String) {
         bytes[offset] = 0x7f
