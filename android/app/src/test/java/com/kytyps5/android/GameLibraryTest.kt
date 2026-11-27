@@ -264,18 +264,17 @@ class GameLibraryTest {
         putMagic(bytes, 0, "FIH")
         bytes[0x05] = signedByte.toByte()
         putLe64(bytes, 0x10, 0x10000L)
-        putLe64(bytes, 0x18, 0x10000L)
+        putLe64(bytes, 0x18, pfsSize)
         putLe64(bytes, 0x58, cntOffset.toLong())
         putLe64(bytes, 0xa0, cntSize.toLong())
         "UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP".toByteArray(Charsets.US_ASCII)
             .copyInto(bytes, cntOffset + 0x40)
 
-        // Debug FIH exposes the outer-PFS superblock; retail FIH encrypts this block.
-        if (signedByte == 0x00) {
-            putLe64(bytes, 0x10000, 2L)
-            putLe64(bytes, 0x10008, 20130315L)
-            putLe32(bytes, 0x10020, 0x10000L)
-        }
+        // Debug and Retail FIH both keep the outer-PFS superblock plaintext.
+        // The PFS mode bit (when set) applies to later data blocks, not this header block.
+        putLe64(bytes, 0x10000, 2L)
+        putLe64(bytes, 0x10008, 20130315L)
+        putLe32(bytes, 0x10020, 0x10000L)
 
         putMagic(bytes, cntOffset, "CNT")
         putBe32(bytes, cntOffset + 0x10, 3L)
