@@ -16,6 +16,7 @@ import android.widget.Switch
 import android.widget.TextView
 import com.kytyps5.android.GameEntry
 import com.kytyps5.android.LauncherSettings
+import com.kytyps5.android.LauncherI18n
 import com.kytyps5.android.RenderScale
 import com.kytyps5.android.Resolution
 import com.kytyps5.android.input.OverlayProfileStore
@@ -37,16 +38,17 @@ class GameSettingsDialog(
 ) {
     private val density = activity.resources.displayMetrics.density
     private val Int.dp: Int get() = (this * density).toInt()
+    private fun tr(value: String): String = LauncherI18n.translate(value, settings.language)
 
     fun show(game: GameEntry) {
         val current = settings.gameSettings(game.path)
-        val resolution = spinner(listOf("Global (${settings.resolution.label})") + Resolution.entries.map { it.label })
+        val resolution = spinner(listOf(tr("Global") + " (${settings.resolution.label})") + Resolution.entries.map { it.label })
         resolution.setSelection(current.resolution?.let { Resolution.entries.indexOf(it) + 1 } ?: 0)
-        val renderScale = spinner(listOf("Global (${settings.renderScale.label})") + RenderScale.entries.map { it.label })
+        val renderScale = spinner(listOf(tr("Global") + " (${settings.renderScale.label})") + RenderScale.entries.map { it.label })
         renderScale.setSelection(current.renderScale?.let { RenderScale.entries.indexOf(it) + 1 } ?: 0)
-        val hud = triState("Performance HUD", current.hud, settings.hudEnabled)
-        val touch = triState("Touch controls", current.touchControls, settings.touchControlsEnabled)
-        val gpuTurbo = triState(GPU_TURBO_LABEL, current.gpuTurbo, settings.gpuTurbo)
+        val hud = triState(tr("Performance HUD"), current.hud, settings.hudEnabled)
+        val touch = triState(tr("Touch controls"), current.touchControls, settings.touchControlsEnabled)
+        val gpuTurbo = triState(tr(GPU_TURBO_LABEL), current.gpuTurbo, settings.gpuTurbo)
         val env = EditText(activity).apply {
             setText(EnvVars.format(current.envVars))
             hint = "TU_DEBUG=sysmem"
@@ -64,32 +66,33 @@ class GameSettingsDialog(
         }
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
+            layoutDirection = if (LauncherI18n.isRtl(settings.language)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             setPadding(20.dp, 8.dp, 20.dp, 8.dp)
             addView(label(listOfNotNull(game.titleId, game.path).joinToString("\n"), secondary = true))
-            addView(label("Resolution", bold = true))
+            addView(label(tr("Resolution"), bold = true))
             addView(resolution)
-            addView(label("Render scale (internal resolution of frame-sized render targets)", bold = true))
+            addView(label(tr("Render scale (internal resolution of frame-sized render targets)"), bold = true))
             addView(renderScale)
-            addView(label("GPU driver", bold = true))
+            addView(label(tr("GPU driver"), bold = true))
             addView(driverButton)
             addView(hud.first)
             addView(touch.first)
             addView(gpuTurbo.first)
             if (presetSwitches.isNotEmpty()) {
-                addView(label("Game presets", bold = true))
-                addView(label("Known-good config files for this game, written into its data folder before launch. Off removes them again.", secondary = true))
+                addView(label(tr("Game presets"), bold = true))
+                addView(label(tr("Known-good config files for this game, written into its data folder before launch. Off removes them again."), secondary = true))
                 presetSwitches.forEach { (preset, switch) ->
                     addView(switch)
                     if (preset.description.isNotEmpty()) addView(label(preset.description, secondary = true))
                 }
             }
-            addView(label("Environment variables (one KEY=VALUE per line)", bold = true))
+            addView(label(tr("Environment variables (one KEY=VALUE per line)"), bold = true))
             addView(env)
             addView(presetsRow(env))
             addView(errors)
             if (layouts.hasGameLayout(game.path)) {
                 addView(Button(activity).apply {
-                    text = "Reset this game's controller layout"
+                    text = tr("Reset this game's controller layout")
                     isAllCaps = false
                     setOnClickListener {
                         layouts.deleteGameLayout(game.path)
@@ -100,10 +103,13 @@ class GameSettingsDialog(
         }
         val dialog = AlertDialog.Builder(activity)
             .setTitle(game.title)
-            .setView(ScrollView(activity).apply { addView(content) })
-            .setPositiveButton("Save", null)
-            .setNeutralButton("Reset all", null)
-            .setNegativeButton("Cancel", null)
+            .setView(ScrollView(activity).apply {
+                layoutDirection = content.layoutDirection
+                addView(content)
+            })
+            .setPositiveButton(tr("Save"), null)
+            .setNeutralButton(tr("Reset all"), null)
+            .setNegativeButton(tr("Cancel"), null)
             .create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -140,7 +146,7 @@ class GameSettingsDialog(
 
     /** Global / On / Off selector; the second value reads the choice back (null = global). */
     private fun triState(title: String, value: Boolean?, global: Boolean): Pair<View, () -> Boolean?> {
-        val spinner = spinner(listOf("Global (${if (global) "on" else "off"})", "On", "Off"))
+        val spinner = spinner(listOf(tr("Global") + " (" + tr(if (global) "On" else "Off") + ")", tr("On"), tr("Off")))
         spinner.setSelection(when (value) { null -> 0; true -> 1; false -> 2 })
         val row = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -158,11 +164,11 @@ class GameSettingsDialog(
     }
 
     private fun presetsRow(env: EditText): View = Button(activity).apply {
-        text = "Add preset…"
+        text = tr("Add preset…")
         isAllCaps = false
         setOnClickListener {
             AlertDialog.Builder(activity)
-                .setTitle("Common Turnip / Mesa variables")
+                .setTitle(tr("Common Turnip / Mesa variables"))
                 .setItems(ENV_PRESETS.map { "${it.first}\n  ${it.second}" }.toTypedArray()) { _, which ->
                     val line = ENV_PRESETS[which].first
                     val text = env.text.toString().trimEnd()
