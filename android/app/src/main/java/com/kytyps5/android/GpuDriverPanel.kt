@@ -127,7 +127,7 @@ class GpuDriverPanel(
 
     private fun chooseGlobal() {
         val drivers = store.list()
-        val labels = listOf(SYSTEM_LABEL) + drivers.map { it.label }
+        val labels = listOf(tr(SYSTEM_LABEL)) + drivers.map { it.label }
         val values = listOf(LauncherSettings.SYSTEM_DRIVER) + drivers.map { it.id }
         val checked = values.indexOf(settings.gpuDriverId).coerceAtLeast(0)
         AlertDialog.Builder(activity)
