@@ -183,7 +183,7 @@ class DriverBrowserDialog(
         val check = when (done.verified) {
             true -> "✓" + tr(" matches the sha256 GitHub published")
             null -> tr("GitHub published no checksum for this file")
-            false -> "✗ mismatch"
+            false -> "✗ " + tr("mismatch")
         }
         AlertDialog.Builder(activity)
             .setTitle(tr("Install ") + asset.name + "?")
