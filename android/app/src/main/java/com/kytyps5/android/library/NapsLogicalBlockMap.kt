@@ -7,9 +7,9 @@ package com.kytyps5.android.library
  * Kraken, apply shuffle transforms, or claim support for sparse-fidx dialects. Unknown
  * RUN key tables and ambiguous block classes are rejected.
  *
- * The algorithm is intentionally limited to layouts where every logical byte is covered
- * by an explicit STD block (no implicit sparse pages). fidx and u2c are cross-checked
- * against the resulting boundaries before a map is returned.
+ * The first supported layouts are contiguous and a conservative sparse-fidx variant. Sparse
+ * pages are inserted only when a 0x40 fidx marker, the exact mount sentinel, and every u2c
+ * page anchor agree. fidx/u2c disagreement or unsupported RUN/KDE layouts are rejected.
  */
 enum class NapsBlockStorage {
     STORED,
@@ -346,59 +346,196 @@ data class NapsLogicalBlockMap(
             val pageCount = counts.uncompressedBlockCount
             val lowerBound = Math.multiplyExact((pageCount - 1L), LOGICAL_BLOCK_SIZE)
             val upperBound = Math.multiplyExact(pageCount.toLong(), LOGICAL_BLOCK_SIZE)
-            if (logicalCursor <= lowerBound || logicalCursor > upperBound) return null
-
-            if (!validateU2c(tables, stdRecords, logicalStarts, pageCount)) return null
-            val boundaries = logicalStarts.toHashSet()
-            val fileBoundaries = ArrayList<Long>(tables.fileOffsets.size)
-            var priorFileOffset = 0L
-            for (i in 0 until tables.fileOffsets.lastIndex) {
-                val file = tables.fileOffsets[i]
-                val offset = file.uncompressedOffsetStart
-                if (file.type == SPARSE_FIDX_MARKER || offset > logicalCursor ||
-                    offset < priorFileOffset || offset !in boundaries
-                ) return null
-                fileBoundaries += offset
-                priorFileOffset = offset
-            }
             val sentinel = tables.fileOffsets.lastOrNull() ?: return null
-            if (sentinel.type != MOUNT_END_MARKER || sentinel.uncompressedOffsetStart != logicalCursor) return null
+            if (sentinel.type != MOUNT_END_MARKER) return null
+            val declaredEnd = sentinel.uncompressedOffsetStart
+            if (declaredEnd <= lowerBound || declaredEnd > upperBound) return null
+
+            val sparseMarkers = tables.fileOffsets.dropLast(1).filter {
+                it.type == SPARSE_FIDX_MARKER
+            }
+            if (sparseMarkers.isEmpty()) {
+                if (declaredEnd != logicalCursor) return null
+            } else {
+                if (declaredEnd <= logicalCursor ||
+                    (declaredEnd - logicalCursor) % LOGICAL_BLOCK_SIZE != 0L
+                ) return null
+            }
+
+            val restored = restoreLogicalCoverage(
+                tables = tables,
+                stdRecords = stdRecords,
+                compactBlocks = blocks,
+                compactStarts = logicalStarts,
+                compactEnd = logicalCursor,
+                pageCount = pageCount,
+                declaredEnd = declaredEnd,
+                sparseMarkers = sparseMarkers,
+            ) ?: return null
 
             return NapsLogicalBlockMap(
-                blocks = blocks,
-                logicalSize = logicalCursor,
+                blocks = restored.blocks,
+                logicalSize = declaredEnd,
                 pageCount = pageCount,
-                fileBoundaries = fileBoundaries,
+                fileBoundaries = restored.fileBoundaries,
             )
         }
 
-        private fun validateU2c(
+        private data class RestoredLogicalCoverage(
+            val blocks: List<NapsLogicalBlock>,
+            val fileBoundaries: List<Long>,
+        )
+
+        /**
+         * Restores omitted whole logical pages from absolute u2c page anchors. The 18-bit STD
+         * uoffset field alone cannot reveal a page-sized gap, so the fidx mount sentinel and
+         * sparse markers are checked independently before any hole is accepted.
+         */
+        private fun restoreLogicalCoverage(
             tables: NapsLayoutTables,
             stdRecords: List<StdRecord>,
-            logicalStarts: List<Long>,
+            compactBlocks: List<NapsLogicalBlock>,
+            compactStarts: List<Long>,
+            compactEnd: Long,
             pageCount: Int,
-        ): Boolean {
-            var expectedStdPosition = 0
+            declaredEnd: Long,
+            sparseMarkers: List<NapsFileOffsetEntry>,
+        ): RestoredLogicalCoverage? {
+            if (stdRecords.size != compactBlocks.size + 1 ||
+                compactStarts.size != stdRecords.size ||
+                compactStarts.lastOrNull() != compactEnd
+            ) return null
+
+            val anchors = HashMap<Int, Long>()
             var previousIndex = -1L
             for (page in 0 until pageCount) {
-                val group = tables.u2cEntries.getOrNull(page / 8) ?: return false
+                val group = tables.u2cEntries.getOrNull(page / 8) ?: return null
                 val slot = page % 8
-                val delta = if (slot == 0) 0 else group.deltaFromBase.getOrNull(slot - 1) ?: return false
+                val delta = if (slot == 0) 0 else group.deltaFromBase.getOrNull(slot - 1) ?: return null
                 val mappedIndex = group.infoOffset9BBase.toLong() + delta.toLong()
-                if (mappedIndex < previousIndex || mappedIndex > Int.MAX_VALUE) return false
+                if (mappedIndex < previousIndex ||
+                    mappedIndex >= tables.cblockInfos.size.toLong()
+                ) return null
                 previousIndex = mappedIndex
+                val record = tables.cblockInfos.getOrNull(mappedIndex.toInt()) ?: return null
+                if (record.isRunBase) return null
+                val recordIndex = mappedIndex.toInt()
+                val pageStart = Math.multiplyExact(page.toLong(), LOGICAL_BLOCK_SIZE)
+                val priorAnchor = anchors.put(recordIndex, pageStart)
+                if (priorAnchor != null && priorAnchor != pageStart) return null
+            }
 
-                val pageStart = page.toLong() * LOGICAL_BLOCK_SIZE
-                while (expectedStdPosition + 1 < logicalStarts.size &&
-                    logicalStarts[expectedStdPosition] < pageStart
+            val restored = ArrayList<NapsLogicalBlock>(
+                minOf(MAX_MAPPED_BLOCKS, compactBlocks.size + sparseMarkers.size + pageCount)
+            )
+            val restoredStarts = LongArray(stdRecords.size)
+            val sourceIndices = IntArray(compactBlocks.size) { -1 }
+            var shift = 0L
+            var insertedHolePages = 0
+            for (index in stdRecords.indices) {
+                val original = compactStarts[index]
+                var logical = Math.addExact(original, shift)
+                val stdRecordIndex = stdRecords[index].recordIndex
+                val pageAnchor = anchors[stdRecordIndex]
+                if (pageAnchor != null && logical < pageAnchor) {
+                    val distance = pageAnchor - logical
+                    val rounded = Math.addExact(distance, LOGICAL_BLOCK_SIZE - 1L)
+                    val gap = Math.multiplyExact(rounded / LOGICAL_BLOCK_SIZE, LOGICAL_BLOCK_SIZE)
+                    if (gap <= 0L || gap > declaredEnd - compactEnd - shift ||
+                        gap % LOGICAL_BLOCK_SIZE != 0L
+                    ) return null
+                    var added = 0L
+                    while (added < gap) {
+                        if (restored.size >= MAX_MAPPED_BLOCKS) return null
+                        restored += NapsLogicalBlock(
+                            sourceOffset = 0L,
+                            sourceLength = 0,
+                            firstChunkCompressedLength = 0,
+                            logicalOffset = Math.addExact(logical, added),
+                            logicalLength = LOGICAL_BLOCK_SIZE.toInt(),
+                            storage = NapsBlockStorage.ZERO_HOLE,
+                            aliasSourceBlock = -1,
+                            runRecordIndex = -1,
+                            evenSelector = 0,
+                            oddSelector = 0,
+                            kdePredictor = 0,
+                            shuffleIndex = 0,
+                            codecFlags = 0,
+                        )
+                        added += LOGICAL_BLOCK_SIZE
+                        insertedHolePages++
+                    }
+                    shift = Math.addExact(shift, gap)
+                    logical = Math.addExact(logical, gap)
+                }
+
+                val expectedModulo = stdRecords[index].entry.uoffsetStart ?: return null
+                if ((logical and MODULO_MASK) != expectedModulo.toLong()) return null
+                restoredStarts[index] = logical
+                if (index == compactBlocks.size) break
+
+                val block = compactBlocks[index]
+                var aliasSource = block.aliasSourceBlock
+                if (block.storage == NapsBlockStorage.ALIAS) {
+                    if (aliasSource !in 0 until index) return null
+                    aliasSource = sourceIndices[aliasSource]
+                    if (aliasSource !in restored.indices) return null
+                    if (restored[aliasSource].logicalLength < block.logicalLength) return null
+                }
+                if (restored.size >= MAX_MAPPED_BLOCKS) return null
+                sourceIndices[index] = restored.size
+                restored += block.copy(
+                    logicalOffset = logical,
+                    aliasSourceBlock = aliasSource,
+                )
+            }
+
+            if (restoredStarts.lastOrNull() != declaredEnd ||
+                Math.addExact(compactEnd, shift) != declaredEnd
+            ) return null
+            if (sparseMarkers.isEmpty() != (insertedHolePages == 0)) return null
+
+            // Every page's u2c anchor must identify the first STD whose restored span covers it.
+            var expectedStdPosition = 0
+            for (page in 0 until pageCount) {
+                val pageStart = Math.multiplyExact(page.toLong(), LOGICAL_BLOCK_SIZE)
+                while (expectedStdPosition + 1 < restoredStarts.size &&
+                    restoredStarts[expectedStdPosition] < pageStart
                 ) {
                     expectedStdPosition++
                 }
-                val expectedRecordIndex = stdRecords.getOrNull(expectedStdPosition)?.recordIndex ?: return false
-                if (mappedIndex != expectedRecordIndex.toLong()) return false
-                if (tables.cblockInfos.getOrNull(mappedIndex.toInt())?.isRunBase != false) return false
+                val expectedIndex = stdRecords.getOrNull(expectedStdPosition)?.recordIndex ?: return null
+                val group = tables.u2cEntries.getOrNull(page / 8) ?: return null
+                val slot = page % 8
+                val delta = if (slot == 0) 0 else group.deltaFromBase.getOrNull(slot - 1) ?: return null
+                val mappedIndex = group.infoOffset9BBase.toLong() + delta.toLong()
+                if (mappedIndex != expectedIndex.toLong()) return null
             }
-            return true
+
+            val payloadStarts = restoredStarts.dropLast(1).toHashSet()
+            val holeStarts = restored.asSequence()
+                .filter { it.storage == NapsBlockStorage.ZERO_HOLE }
+                .map { it.logicalOffset }
+                .toHashSet()
+            val fileBoundaries = ArrayList<Long>(tables.fileOffsets.size - 1)
+            var previousOffset = 0L
+            for (index in 0 until tables.fileOffsets.lastIndex) {
+                val entry = tables.fileOffsets[index]
+                val offset = entry.uncompressedOffsetStart
+                if (offset > declaredEnd || offset < previousOffset) return null
+                val validBoundary = if (entry.type == SPARSE_FIDX_MARKER) {
+                    offset in holeStarts
+                } else {
+                    offset in payloadStarts
+                }
+                if (!validBoundary) return null
+                fileBoundaries += offset
+                previousOffset = offset
+            }
+            if (sparseMarkers.any { it.uncompressedOffsetStart !in holeStarts }) return null
+            if (holeStarts.isEmpty() && sparseMarkers.isNotEmpty()) return null
+
+            return RestoredLogicalCoverage(restored, fileBoundaries)
         }
     }
 }

@@ -205,14 +205,72 @@ class NapsLogicalBlockMapTest {
     }
 
     @Test
-    fun rejectsSparseFidxMarkersUntilSparseDialectExists() {
+    fun mapsSparseFidxPageWhenFidxU2cAndMountEndAgree() {
+        val blob = fixture(
+            logicalLengths = listOf(0x10000, 0x10000),
+            storage = listOf(Storage.STORED, Storage.STORED),
+            fileStarts = listOf(0L, 0x10000L, 0x50000L),
+            sparseFileIndex = 1,
+            uBlocksOverride = 2,
+            mountEndOverride = 0x60000L,
+            u2cIndex = 1,
+            u2cPageOneDelta = 1,
+        )
+        val map = NapsLogicalBlockMap.parse(blob, 0x20000L)
+        assertNotNull(map)
+        map!!
+        assertEquals(0x60000L, map.logicalSize)
+        assertEquals(3, map.blocks.size)
+        assertEquals(0L, map.blocks[0].logicalOffset)
+        assertEquals(NapsBlockStorage.ZERO_HOLE, map.blocks[1].storage)
+        assertEquals(0x10000L, map.blocks[1].logicalOffset)
+        assertEquals(0x40000, map.blocks[1].logicalLength)
+        assertEquals(0x50000L, map.blocks[2].logicalOffset)
+        assertEquals(listOf(0L, 0x10000L, 0x50000L), map.fileBoundaries)
+
+        val output = ByteArrayOutputStream()
+        val first = ByteArray(0x10000) { 0x31 }
+        val second = ByteArray(0x10000) { 0x52 }
+        assertEquals(
+            NapsImageBuildResult.SUCCESS,
+            map.writeUncompressedImage(output) { offset, length ->
+                when (offset) {
+                    0L -> first.also { assertEquals(0x10000, length) }
+                    0x10000L -> second.also { assertEquals(0x10000, length) }
+                    else -> null
+                }
+            },
+        )
+        val bytes = output.toByteArray()
+        assertArrayEquals(first, bytes.copyOfRange(0, 0x10000))
+        assertTrue(bytes.copyOfRange(0x10000, 0x50000).all { it == 0.toByte() })
+        assertArrayEquals(second, bytes.copyOfRange(0x50000, 0x60000))
+    }
+
+    @Test
+    fun rejectsSparseFidxMarkerWithoutMatchingPageGap() {
         val blob = fixture(
             logicalLengths = listOf(0x10000),
             storage = listOf(Storage.KRAKEN),
             fileStarts = listOf(0L),
-            sparseFirstFileMarker = true,
+            sparseFileIndex = 0,
         )
         assertNull(NapsLogicalBlockMap.parse(blob, 0x200L))
+    }
+
+    @Test
+    fun rejectsSparseFidxWhenU2cDoesNotPointToTheNextStdPage() {
+        val blob = fixture(
+            logicalLengths = listOf(0x10000, 0x10000),
+            storage = listOf(Storage.STORED, Storage.STORED),
+            fileStarts = listOf(0L, 0x10000L, 0x50000L),
+            sparseFileIndex = 1,
+            uBlocksOverride = 2,
+            mountEndOverride = 0x60000L,
+            u2cIndex = 1,
+            u2cPageOneDelta = 0,
+        )
+        assertNull(NapsLogicalBlockMap.parse(blob, 0x20000L))
     }
 
     private enum class Storage { STORED, KRAKEN, ZERO_HOLE, ALIAS }
@@ -227,14 +285,17 @@ class NapsLogicalBlockMapTest {
         fileStarts: List<Long>,
         secondRunPage: Int = -1,
         u2cIndex: Int = 1,
-        sparseFirstFileMarker: Boolean = false,
+        sparseFileIndex: Int? = null,
+        uBlocksOverride: Int? = null,
+        mountEndOverride: Long? = null,
+        u2cPageOneDelta: Int = 0,
     ): ByteArray {
         require(logicalLengths.isNotEmpty() && logicalLengths.size == storage.size)
         require(logicalLengths.all { it in 1..0x40000 })
         val blockCount = logicalLengths.size
         val fileCount = fileStarts.size + 1
-        val uBlocks = ((logicalLengths.sum().toLong() + 0x3ffffL) / 0x40000L).toInt()
-        require(uBlocks == 1) { "Test fixtures currently use one logical 256 KiB page" }
+        val uBlocks = uBlocksOverride ?: ((logicalLengths.sum().toLong() + 0x3ffffL) / 0x40000L).toInt()
+        require(uBlocks in 1..2) { "Test fixtures currently use at most two logical 256 KiB pages" }
         val cblockCount = blockCount + 2 + if (secondRunPage >= 0) 1 else 0
 
         val shuffleCount = 0
@@ -258,15 +319,16 @@ class NapsLogicalBlockMapTest {
         var fidx = fidxOffset
         for ((index, start) in fileStarts.withIndex()) {
             putLe40(blob, fidx, start)
-            blob[fidx + 5] = if (sparseFirstFileMarker && index == 0) 0x40 else 0
+            blob[fidx + 5] = if (sparseFileIndex == index) 0x40 else 0
             fidx += 6
         }
-        val totalLogical = logicalLengths.sum().toLong()
+        val totalLogical = mountEndOverride ?: logicalLengths.sum().toLong()
         putLe40(blob, fidx, totalLogical)
         blob[fidx + 5] = 0x40
 
         // One u2c entry, referencing the first STD (or the explicitly requested wrong index).
         putLe24(blob, u2cOffset, u2cIndex)
+        if (u2cCount > 0) blob[u2cOffset + 3] = u2cPageOneDelta.toByte()
 
         val records = ArrayList<ByteArray>()
         records += run(startPage = 0, endModulo = 0)

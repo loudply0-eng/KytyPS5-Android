@@ -1,8 +1,9 @@
 Reference notice
 ================
 
-The NAPS 9-byte CblockInfo bit positions in NapsLayoutTables.kt were cross-checked
-against the public format analysis in pearlxcore/ProsperoPkgTool:
+The NAPS 9-byte CblockInfo bit positions and sparse-page restoration invariants in
+NapsLayoutTables.kt and NapsLogicalBlockMap.kt were cross-checked against the public
+format analysis in pearlxcore/ProsperoPkgTool:
 
 https://github.com/pearlxcore/ProsperoPkgTool
 
