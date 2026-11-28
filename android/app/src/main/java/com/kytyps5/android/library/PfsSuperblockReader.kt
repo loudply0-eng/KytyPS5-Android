@@ -165,6 +165,23 @@ object PfsSuperblockReader {
         }
     }
 
+    private fun readLe16(bytes: ByteArray, offset: Int): Long =
+        (bytes[offset].toLong() and 0xffL) or ((bytes[offset + 1].toLong() and 0xffL) shl 8)
+
+    private fun readLe32(bytes: ByteArray, offset: Int): Long =
+        (bytes[offset].toLong() and 0xffL) or
+            ((bytes[offset + 1].toLong() and 0xffL) shl 8) or
+            ((bytes[offset + 2].toLong() and 0xffL) shl 16) or
+            ((bytes[offset + 3].toLong() and 0xffL) shl 24)
+
+    private fun readLe64(bytes: ByteArray, offset: Int): Long {
+        var value = 0L
+        for (index in 0 until 8) {
+            value = value or ((bytes[offset + index].toLong() and 0xffL) shl (index * 8))
+        }
+        return value
+    }
+
     private fun readLe16(raf: RandomAccessFile): Long {
         val b0 = raf.readUnsignedByte().toLong()
         val b1 = raf.readUnsignedByte().toLong()
