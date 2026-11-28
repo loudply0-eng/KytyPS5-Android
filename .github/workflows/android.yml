@@ -66,6 +66,12 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Cache Gradle dependencies
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-read-only: false
+
       - name: Android SDK and NDK
         shell: bash
         run: |
