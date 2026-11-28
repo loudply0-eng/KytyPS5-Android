@@ -180,6 +180,7 @@ class PfsImageReader private constructor(
         if (size == 0L) return ByteArray(0)
         val blockSize = superblock.blockSize
         val blockCount = (size + blockSize - 1L) / blockSize
+        if (inode.blocks < blockCount) return null
         val pointersPerBlock = blockSize / 4L
         val firstDataBlock = 1L + superblock.inodeBlockCount
         val dataBlockLimit = firstDataBlock + superblock.dataBlockCount
