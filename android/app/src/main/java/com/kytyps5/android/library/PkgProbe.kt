@@ -20,6 +20,8 @@ data class PkgProbeResult(
     val fihSignedByte: Int? = null,
     /** Exact PFS segment byte length from the FIH header. */
     val pfsSize: Long? = null,
+    /** Absolute file offset of the readable outer-PFS superblock, when located. */
+    val pfsSuperblockOffset: Long? = null,
     /** Readable outer-PFS superblock metadata; unavailable for Retail FIH ciphertext. */
     val pfsSuperblock: PfsSuperblockInfo? = null,
 ) {
@@ -106,11 +108,13 @@ object PkgProbe {
         // Retail FIH encrypts the entire outer PFS, including the superblock.
         // Do not parse ciphertext as a PFS header. Debug FIH can expose a readable
         // superblock; validate it when present and report its mode bit without decrypting.
-        val pfsSuperblock = if (fihSignedByte == 0x00) {
-            PfsSuperblockReader.read(raf, pfsOffset, pfsSize) ?: return malformed()
+        val superblockLocation = if (fihSignedByte == 0x00) {
+            PfsSuperblockReader.find(raf, pfsOffset, pfsSize) ?: return malformed()
         } else {
             null
         }
+        val pfsSuperblock = superblockLocation?.second
+        val pfsSuperblockOffset = superblockLocation?.first
 
         // rangeFits proves this addition cannot overflow.
         val pfsEnd = pfsOffset + pfsSize
@@ -125,7 +129,7 @@ object PkgProbe {
             return malformed()
         }
 
-        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize, pfsSuperblock)
+        return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize, pfsSuperblockOffset, pfsSuperblock)
     }
 
     private fun malformed() =
