@@ -101,9 +101,8 @@ object PkgProbe {
 
         if (fihSignedByte != 0x00 && fihSignedByte != 0x80) return malformed()
 
-        // Retail FIH encrypts the entire outer PFS, including the superblock.
-        // Do not parse ciphertext as a PFS header. Debug FIH can expose a readable
-        // superblock; validate it when present and report its mode bit without decrypting.
+        // The FIH variant byte is not a PFS mode flag. Probe a readable Debug
+        // superblock only; leave Retail PFS encryption unknown in this metadata-only stage.
         val superblockLocation = if (fihSignedByte == 0x00) {
             PfsSuperblockReader.find(raf, pfsOffset, pfsSize) ?: return malformed()
         } else {
