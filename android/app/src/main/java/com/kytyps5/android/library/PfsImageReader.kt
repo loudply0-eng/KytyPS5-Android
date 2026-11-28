@@ -52,7 +52,7 @@ class PfsImageReader private constructor(
      */
     fun readFile(path: String, maxBytes: Long = DEFAULT_MAX_FILE_BYTES): ByteArray? {
         return try {
-            if (path.isBlank() || path.startsWith('/') || path.contains('\\\\')) return null
+            if (path.isBlank() || path.startsWith('/') || path.contains('\\')) return null
             val normalized = path.split('/').filter { it.isNotEmpty() }
             if (normalized.isEmpty() || normalized.any { it == "." || it == ".." }) return null
             val canonical = normalized.joinToString("/")
