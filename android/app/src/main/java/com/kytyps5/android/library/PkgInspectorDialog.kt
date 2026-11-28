@@ -56,6 +56,10 @@ class PkgInspectorDialog(
             tr("Outer PFS encryption"),
             probe.pfsEncrypted?.let { tr(if (it) "Encrypted" else "Plaintext") } ?: tr("Not available"),
         )
+        probe.pfsSuperblockOffset?.let { absoluteOffset ->
+            val relativeOffset = absoluteOffset - 0x10000L
+            addRow(content, tr("PFS superblock block"), (relativeOffset / 0x10000L).toString())
+        }
         probe.pfsSuperblock?.let { pfs ->
             addRow(content, tr("PFS block size"), formatBytes(pfs.blockSize))
             addRow(content, tr("PFS inode count"), pfs.inodeCount.toString())
