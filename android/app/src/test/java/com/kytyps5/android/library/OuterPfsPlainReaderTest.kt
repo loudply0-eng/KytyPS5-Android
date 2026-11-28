@@ -79,6 +79,27 @@ class OuterPfsPlainReaderTest {
     }
 
     @Test
+    fun readsInnerParamSfoMetadataWhenParamJsonIsAbsent() {
+        val packageFile = createMappedInnerPfsFixture(useSfo = true)
+        try {
+            val probe = PkgProbe.probe(packageFile)
+            assertEquals(PkgProbeResult.Kind.PS5_FIH, probe.kind)
+
+            val summary = OuterPfsInspector.inspect(packageFile, probe)
+            assertEquals(OuterPfsInspectionState.MAPPED, summary.state)
+            assertEquals(2, summary.innerPfsEntryCount)
+            assertEquals(false, summary.innerPfsParamJsonReadable)
+            assertEquals(true, summary.innerPfsParamSfoReadable)
+            assertEquals("Mapped SFO Fixture", summary.innerPfsTitle)
+            assertEquals("PPSA99999", summary.innerPfsTitleId)
+            assertEquals("01.001", summary.innerPfsApplicationVersion)
+            assertTrue(summary.innerPfsPaths.contains("sce_sys/param.sfo"))
+        } finally {
+            packageFile.delete()
+        }
+    }
+
+    @Test
     fun rejectsDebugPfsWithoutExplicitPlainNoAuthSeed() {
         val packageFile = createFixture(seed = "NOT-A-PLAIN-KEY!".toByteArray())
         try {
@@ -158,12 +179,12 @@ class OuterPfsPlainReaderTest {
         return File.createTempFile("ps5-outer-pfs-", ".pkg").also { it.writeBytes(bytes) }
     }
 
-    private fun createMappedInnerPfsFixture(): File {
+    private fun createMappedInnerPfsFixture(useSfo: Boolean = false): File {
         val pfsOffset = 0x10000
         val pfsSize = (9 * BLOCK_SIZE).toInt()
         val superblockIndex = 5
         val cntOffset = pfsOffset + pfsSize
-        val inner = createInnerPfsImage()
+        val inner = createInnerPfsImage(useSfo)
         val packedImage = ByteArray(0x40000).also { inner.copyInto(it) }
         val napsLayout = NapsLogicalBlockMapTest().singlePageStoredLayoutFixture()
         val bytes = ByteArray(cntOffset + 0x1000)
@@ -212,9 +233,18 @@ class OuterPfsPlainReaderTest {
         return File.createTempFile("ps5-mapped-inner-", ".pkg").also { it.writeBytes(bytes) }
     }
 
-    private fun createInnerPfsImage(): ByteArray {
+    private fun createInnerPfsImage(useSfo: Boolean): ByteArray {
         val blockSize = 0x1000
-        val json = """{"titleName":"Mapped PKG Fixture"}""".toByteArray()
+        val metadataName = if (useSfo) "param.sfo" else "param.json"
+        val metadataBytes = if (useSfo) {
+            SfoFixture.build(
+                "TITLE" to "Mapped SFO Fixture",
+                "TITLE_ID" to "PPSA99999",
+                "APP_VER" to "01.001",
+            )
+        } else {
+            """{"titleName":"Mapped PKG Fixture"}""".toByteArray()
+        }
         val superRoot = ByteArray(72)
         var cursor = 0
         cursor = writeDirent(superRoot, cursor, 0, 4, ".")
@@ -231,7 +261,7 @@ class OuterPfsPlainReaderTest {
         cursor = 0
         cursor = writeDirent(sceSys, cursor, 2, 4, ".")
         cursor = writeDirent(sceSys, cursor, 1, 5, "..")
-        cursor = writeDirent(sceSys, cursor, 3, 2, "param.json")
+        cursor = writeDirent(sceSys, cursor, 3, 2, metadataName)
 
         val image = ByteArray(6 * blockSize)
         putLe64(image, 0, 2L)
@@ -249,12 +279,12 @@ class OuterPfsPlainReaderTest {
         writeInnerInode(image, inodeTable, 0, 0x4000, superRoot.size.toLong(), 2)
         writeInnerInode(image, inodeTable, 1, 0x4000, root.size.toLong(), 3)
         writeInnerInode(image, inodeTable, 2, 0x4000, sceSys.size.toLong(), 4)
-        writeInnerInode(image, inodeTable, 3, 0x8000, json.size.toLong(), 5)
+        writeInnerInode(image, inodeTable, 3, 0x8000, metadataBytes.size.toLong(), 5)
 
         superRoot.copyInto(image, 2 * blockSize)
         root.copyInto(image, 3 * blockSize)
         sceSys.copyInto(image, 4 * blockSize)
-        json.copyInto(image, 5 * blockSize)
+        metadataBytes.copyInto(image, 5 * blockSize)
         return image
     }
 

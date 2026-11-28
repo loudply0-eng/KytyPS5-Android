@@ -153,6 +153,25 @@ class PkgInspectorDialog(
                     ),
                 )
             }
+            inspection.innerPfsParamSfoReadable?.let { readable ->
+                addRow(
+                    content,
+                    trInspection("Inner sce_sys/param.sfo", "ملف param.sfo الداخلي"),
+                    trInspection(
+                        if (readable) "Readable" else "Missing or unsupported",
+                        if (readable) "مقروء" else "مفقود أو غير مدعوم",
+                    ),
+                )
+            }
+            inspection.innerPfsTitle?.let {
+                addRow(content, trInspection("Inner title", "اسم اللعبة الداخلي"), it)
+            }
+            inspection.innerPfsTitleId?.let {
+                addRow(content, trInspection("Inner title ID", "معرّف اللعبة الداخلي"), it)
+            }
+            inspection.innerPfsApplicationVersion?.let {
+                addRow(content, trInspection("Inner app version", "إصدار التطبيق الداخلي"), it)
+            }
             if (inspection.innerPfsPaths.isNotEmpty()) {
                 addRow(
                     content,

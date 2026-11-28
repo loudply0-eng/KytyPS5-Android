@@ -548,6 +548,10 @@ data class OuterPfsInspectionSummary(
     val firstPayloadReadable: Boolean? = null,
     val innerPfsEntryCount: Int? = null,
     val innerPfsParamJsonReadable: Boolean? = null,
+    val innerPfsParamSfoReadable: Boolean? = null,
+    val innerPfsTitle: String? = null,
+    val innerPfsTitleId: String? = null,
+    val innerPfsApplicationVersion: String? = null,
     val innerPfsPaths: List<String> = emptyList(),
 )
 
@@ -557,6 +561,7 @@ data class OuterPfsInspectionSummary(
  */
 object OuterPfsInspector {
     private const val MAX_INNER_PARAM_JSON_BYTES = 1024L * 1024L
+    private const val MAX_INNER_PARAM_SFO_BYTES = 64L * 1024L
 
     fun inspect(file: File, probe: PkgProbeResult): OuterPfsInspectionSummary {
         if (probe.fihSignedByte != 0x00) {
@@ -593,14 +598,41 @@ object OuterPfsInspector {
                 }
                 var innerPfsEntryCount: Int? = null
                 var innerPfsParamJsonReadable: Boolean? = null
+                var innerPfsParamSfoReadable: Boolean? = null
+                var innerPfsTitle: String? = null
+                var innerPfsTitleId: String? = null
+                var innerPfsApplicationVersion: String? = null
                 var innerPfsPaths: List<String> = emptyList()
                 pfs.openMappedInnerPfsReader()?.use { inner ->
                     val innerEntries = inner.listEntries()
                     if (innerEntries != null) {
                         innerPfsEntryCount = innerEntries.size
                         innerPfsPaths = innerEntries.take(20).map { it.path }
-                        innerPfsParamJsonReadable =
-                            inner.readFile("sce_sys/param.json", MAX_INNER_PARAM_JSON_BYTES) != null
+
+                        val paramJsonBytes =
+                            inner.readFile("sce_sys/param.json", MAX_INNER_PARAM_JSON_BYTES)
+                        val paramJson = paramJsonBytes?.let { bytes ->
+                            runCatching { org.json.JSONObject(bytes.toString(Charsets.UTF_8)) }.getOrNull()
+                        }
+                        innerPfsParamJsonReadable = paramJson != null
+
+                        val paramSfoBytes =
+                            inner.readFile("sce_sys/param.sfo", MAX_INNER_PARAM_SFO_BYTES)
+                        val paramSfo = paramSfoBytes?.let(ParamSfo::parse)
+                        innerPfsParamSfoReadable = paramSfo != null
+
+                        fun nonBlank(value: String?): String? =
+                            value?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+
+                        innerPfsTitle = nonBlank(paramJson?.optString("titleName"))
+                            ?: nonBlank(paramSfo?.get("TITLE") as? String)
+                        innerPfsTitleId = nonBlank(paramJson?.optString("masterDataId"))
+                            ?: nonBlank(paramJson?.optString("titleId"))
+                            ?: nonBlank(paramSfo?.get("TITLE_ID") as? String)
+                        innerPfsApplicationVersion =
+                            nonBlank(paramJson?.optString("applicationVersion"))
+                                ?: nonBlank(paramJson?.optString("version"))
+                                ?: nonBlank(paramSfo?.get("APP_VER") as? String)
                     }
                 }
 
@@ -618,6 +650,10 @@ object OuterPfsInspector {
                     firstPayloadReadable = firstPayloadReadable,
                     innerPfsEntryCount = innerPfsEntryCount,
                     innerPfsParamJsonReadable = innerPfsParamJsonReadable,
+                    innerPfsParamSfoReadable = innerPfsParamSfoReadable,
+                    innerPfsTitle = innerPfsTitle,
+                    innerPfsTitleId = innerPfsTitleId,
+                    innerPfsApplicationVersion = innerPfsApplicationVersion,
                     innerPfsPaths = innerPfsPaths,
                 )
             }
