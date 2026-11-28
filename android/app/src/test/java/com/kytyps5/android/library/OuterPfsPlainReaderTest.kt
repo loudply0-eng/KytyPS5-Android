@@ -180,7 +180,7 @@ class OuterPfsPlainReaderTest {
         putLe64(bytes, superblockOffset, 2L)
         putLe64(bytes, superblockOffset + 0x08, 20130315L)
         putLe16(bytes, superblockOffset + 0x1c, 0)
-        putLe32(bytes, superblockOffset + 0x20, BLOCK_SIZE)
+        putLe32(bytes, superblockOffset + 0x20, BLOCK_SIZE.toLong())
         putLe32(bytes, superblockOffset + 0x24, 0L)
         putLe64(bytes, superblockOffset + 0x28, 9L)
         putLe64(bytes, superblockOffset + 0x30, 5L)
