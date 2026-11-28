@@ -47,6 +47,32 @@ class PkgProbeTest {
     }
 
     @Test
+    fun findsDataFirstDebugOuterPfsSuperblockAfterInitialDataBlock() {
+        val file = writeFih("data-first.pkg", 0x10000L, 0x30000L, 0x40000L, 0x5A0L)
+        RandomAccessFile(file, "rw").use { raf ->
+            // The first 64 KiB block is file data; the valid outer-PFS superblock is in block 1.
+            raf.seek(0x10000L)
+            raf.write(ByteArray(0x10000))
+            raf.seek(0x20000L)
+            putLe64(raf, 0x20000L, 2L)
+            putLe64(raf, 0x20008L, 20130315L)
+            putLe16(raf, 0x2001cL, 0x0008)
+            putLe32(raf, 0x20020L, 0x10000L)
+            putLe32(raf, 0x20024L, 0L)
+            putLe64(raf, 0x20028L, 2L)
+            putLe64(raf, 0x20030L, 1L)
+            putLe64(raf, 0x20038L, 1L)
+            putLe64(raf, 0x20040L, 1L)
+            putLe64(raf, 0x20048L, 0L)
+        }
+
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(0x20000L, result.pfsSuperblockOffset)
+        assertEquals(0x10000L, result.pfsSuperblock?.blockSize)
+    }
+
+    @Test
     fun preservesRetailSignedByteWithoutParsingEncryptedOuterSuperblock() {
         val file = writeFih("retail-marker.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, signedByte = 0x80)
         RandomAccessFile(file, "rw").use { raf ->
