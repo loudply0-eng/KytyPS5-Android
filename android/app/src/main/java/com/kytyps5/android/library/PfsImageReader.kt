@@ -135,7 +135,12 @@ class PfsImageReader private constructor(
             val nameEnd = nameStart + nameLength.toInt()
             if (nameEnd >= end || bytes[nameEnd] != 0.toByte()) throw IOException("Invalid PFS dirent name")
             val name = decodeUtf8(bytes.copyOfRange(nameStart, nameEnd)) ?: throw IOException("Invalid PFS name")
-            if (!isSafeName(name)) throw IOException("Unsafe PFS path component")
+            val safeName = when (type) {
+                DIRENT_DOT -> name == "."
+                DIRENT_DOTDOT -> name == ".."
+                else -> isSafeName(name)
+            }
+            if (!safeName) throw IOException("Unsafe PFS path component")
             if (type !in setOf(DIRENT_FILE, DIRENT_DIRECTORY, DIRENT_DOT, DIRENT_DOTDOT)) {
                 throw IOException("Unsupported PFS dirent type")
             }
@@ -263,7 +268,10 @@ class PfsImageReader private constructor(
                 // This reader deliberately refuses signed, 64-bit, or encrypted PFS variants.
                 if (sb.signedInodes || sb.wideInodes || sb.encrypted) return null.also { raf.close() }
                 val inodeSlots = sb.blockSize / INODE_SIZE
-                if (inodeSlots <= 0L || sb.inodeCount > sb.inodeBlockCount * inodeSlots) {
+                if (inodeSlots <= 0L || sb.inodeBlockCount > Long.MAX_VALUE / inodeSlots ||
+                    sb.inodeCount > sb.inodeBlockCount * inodeSlots ||
+                    sb.inodeBlockCount > Long.MAX_VALUE / sb.blockSize
+                ) {
                     return null.also { raf.close() }
                 }
                 val inodeBytes = sb.inodeBlockCount * sb.blockSize
