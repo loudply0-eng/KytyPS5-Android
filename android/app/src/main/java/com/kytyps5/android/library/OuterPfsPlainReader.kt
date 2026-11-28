@@ -35,6 +35,7 @@ class OuterPfsPlainReader private constructor(
     private val pfsSize: Long,
     private val blockCount: Int,
     val superblockIndex: Int,
+    private val superblockInfo: PfsSuperblockInfo,
     private val inodeTableStart: Int,
 ) : Closeable {
 
@@ -424,6 +425,7 @@ class OuterPfsPlainReader private constructor(
                     pfsSize = pfsSize,
                     blockCount = blockCountLong.toInt(),
                     superblockIndex = superblockIndex,
+                    superblockInfo = info,
                     inodeTableStart = inodeStartLong.toInt(),
                 )
             } catch (_: IOException) {
