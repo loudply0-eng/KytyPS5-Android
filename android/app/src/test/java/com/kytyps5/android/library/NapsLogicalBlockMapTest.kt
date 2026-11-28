@@ -113,7 +113,7 @@ class NapsLogicalBlockMapTest {
         logicalLengths: List<Int>,
         storage: List<Storage>,
         fileStarts: List<Long>,
-        secondRunPage: Int = 1,
+        secondRunPage: Int = -1,
         u2cIndex: Int = 1,
         sparseFirstFileMarker: Boolean = false,
     ): ByteArray {
