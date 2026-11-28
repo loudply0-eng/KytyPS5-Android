@@ -8,8 +8,8 @@ import java.io.RandomAccessFile
  * Conservative PS5 package probe.
  *
  * It validates FIH/CNT segment bounds and readable CNT metadata. Debug FIH may expose
- * a plaintext outer-PFS superblock; Retail FIH encrypts the complete outer PFS, including
- * its superblock, so Retail geometry is intentionally not parsed here.
+ * a plaintext outer-PFS superblock. Retail FIH is recognized, but its outer-PFS encryption
+ * state remains unknown until the required key and authenticated block handling are implemented.
  * This class never decrypts, extracts, installs, or launches package content.
  */
 data class PkgProbeResult(
@@ -26,14 +26,10 @@ data class PkgProbeResult(
     val pfsSuperblock: PfsSuperblockInfo? = null,
 ) {
     /**
-     * Whether the outer-PFS payload is encrypted. Retail/submitted FIH is treated as encrypted;
-     * Debug FIH reports the PFS mode bit only when a valid plaintext superblock was found.
+     * Encryption state reported by a successfully parsed PFS superblock.
+     * The FIH variant/signature byte is deliberately not treated as a PFS mode bit.
      */
-    val pfsEncrypted: Boolean? get() = when (fihSignedByte) {
-        0x80 -> true
-        0x00 -> pfsSuperblock?.encrypted
-        else -> null
-    }
+    val pfsEncrypted: Boolean? get() = pfsSuperblock?.encrypted
     enum class Kind {
         PS5_FIH,
         PS5_LIH,
