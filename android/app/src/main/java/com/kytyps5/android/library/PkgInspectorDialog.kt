@@ -140,6 +140,26 @@ class PkgInspectorDialog(
             inspection.logicalBlockCount?.let {
                 addRow(content, trInspection("Logical blocks", "عدد الكتل المنطقية"), it.toString())
             }
+            inspection.innerPfsEntryCount?.let {
+                addRow(content, trInspection("Inner PFS entries", "ملفات PFS الداخلية"), it.toString())
+            }
+            inspection.innerPfsParamJsonReadable?.let { readable ->
+                addRow(
+                    content,
+                    trInspection("Inner sce_sys/param.json", "ملف param.json الداخلي"),
+                    trInspection(
+                        if (readable) "Readable" else "Missing or unsupported",
+                        if (readable) "مقروء" else "مفقود أو غير مدعوم",
+                    ),
+                )
+            }
+            if (inspection.innerPfsPaths.isNotEmpty()) {
+                addRow(
+                    content,
+                    trInspection("Inner PFS paths", "مسارات PFS الداخلية"),
+                    inspection.innerPfsPaths.joinToString(", "),
+                )
+            }
             if (inspection.state == OuterPfsInspectionState.MAPPED) {
                 addRow(content, trInspection("Stored blocks", "الكتل المخزنة"), inspection.storedBlockCount.toString())
                 addRow(content, trInspection("Kraken-compressed blocks", "كتل Kraken المضغوطة"), inspection.krakenBlockCount.toString())

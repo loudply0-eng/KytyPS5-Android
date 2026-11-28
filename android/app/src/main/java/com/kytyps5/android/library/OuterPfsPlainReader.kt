@@ -546,6 +546,9 @@ data class OuterPfsInspectionSummary(
     val zeroHoleCount: Int = 0,
     val aliasBlockCount: Int = 0,
     val firstPayloadReadable: Boolean? = null,
+    val innerPfsEntryCount: Int? = null,
+    val innerPfsParamJsonReadable: Boolean? = null,
+    val innerPfsPaths: List<String> = emptyList(),
 )
 
 /**
@@ -553,6 +556,8 @@ data class OuterPfsInspectionSummary(
  * Retail or encrypted packages remain explicitly unsupported here.
  */
 object OuterPfsInspector {
+    private const val MAX_INNER_PARAM_JSON_BYTES = 1024L * 1024L
+
     fun inspect(file: File, probe: PkgProbeResult): OuterPfsInspectionSummary {
         if (probe.fihSignedByte != 0x00) {
             return OuterPfsInspectionSummary(OuterPfsInspectionState.NOT_SUPPORTED)
@@ -586,6 +591,19 @@ object OuterPfsInspector {
                         pfs.readPackedImageRegion(offset, length)
                     } != null
                 }
+                var innerPfsEntryCount: Int? = null
+                var innerPfsParamJsonReadable: Boolean? = null
+                var innerPfsPaths: List<String> = emptyList()
+                pfs.openMappedInnerPfsReader()?.use { inner ->
+                    val innerEntries = inner.listEntries()
+                    if (innerEntries != null) {
+                        innerPfsEntryCount = innerEntries.size
+                        innerPfsPaths = innerEntries.take(20).map { it.path }
+                        innerPfsParamJsonReadable =
+                            inner.readFile("sce_sys/param.json", MAX_INNER_PARAM_JSON_BYTES) != null
+                    }
+                }
+
                 val counts = map.blocks.groupingBy { it.storage }.eachCount()
                 OuterPfsInspectionSummary(
                     state = OuterPfsInspectionState.MAPPED,
@@ -598,6 +616,9 @@ object OuterPfsInspector {
                     zeroHoleCount = counts[NapsBlockStorage.ZERO_HOLE] ?: 0,
                     aliasBlockCount = counts[NapsBlockStorage.ALIAS] ?: 0,
                     firstPayloadReadable = firstPayloadReadable,
+                    innerPfsEntryCount = innerPfsEntryCount,
+                    innerPfsParamJsonReadable = innerPfsParamJsonReadable,
+                    innerPfsPaths = innerPfsPaths,
                 )
             }
         } catch (_: IOException) {

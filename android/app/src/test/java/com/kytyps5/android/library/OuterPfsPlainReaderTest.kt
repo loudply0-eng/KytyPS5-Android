@@ -28,12 +28,15 @@ class OuterPfsPlainReaderTest {
                 assertArrayEquals("NAPS_DATA".toByteArray(), it.readNapsLayout())
                 assertArrayEquals("IMG!".toByteArray(), it.readPackedImageRegion(0L, 4))
                 assertNull(it.readPackedImageRegion(0x10000L, 1))
+                assertNull(it.openMappedInnerPfsReader())
             }
             val summary = OuterPfsInspector.inspect(packageFile, probe)
             assertEquals(OuterPfsInspectionState.NAPS_NOT_RECOGNIZED, summary.state)
             assertTrue(summary.fileNames.contains("pfs_image.dat"))
             assertTrue(summary.fileNames.contains("naps_pkg_layout.dat"))
             assertEquals(0x10000L, summary.packedImageSize)
+            assertNull(summary.innerPfsEntryCount)
+            assertNull(summary.innerPfsParamJsonReadable)
         } finally {
             packageFile.delete()
         }

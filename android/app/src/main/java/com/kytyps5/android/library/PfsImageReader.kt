@@ -206,9 +206,14 @@ class PfsImageReader private constructor(
             val count = minOf(blockSize.toInt(), out.size - outputOffset)
             val blockOffset = segmentOffset + blockNumber * blockSize
             if (!rangeFits(blockNumber * blockSize, count.toLong(), segmentSize)) return null
-            val blockBytes = readBytes(blockOffset, count) ?: return null
-            blockBytes.copyInto(out, outputOffset)
-            outputOffset += count
+            var blockBytesRead = 0
+            while (blockBytesRead < count) {
+                val chunkSize = minOf(MAX_SOURCE_READ_BYTES, count - blockBytesRead)
+                val blockBytes = readBytes(blockOffset + blockBytesRead, chunkSize) ?: return null
+                blockBytes.copyInto(out, outputOffset)
+                outputOffset += chunkSize
+                blockBytesRead += chunkSize
+            }
             logicalBlock++
         }
         return out
@@ -265,6 +270,7 @@ class PfsImageReader private constructor(
         private const val MAX_NAME_BYTES = 1024L
         private const val MAX_DIRECTORY_BYTES = 16L * 1024L * 1024L
         private const val DEFAULT_MAX_FILE_BYTES = 32L * 1024L * 1024L
+        private const val MAX_SOURCE_READ_BYTES = 1024 * 1024
 
         fun open(file: File, offset: Long = 0L, size: Long = file.length()): PfsImageReader? {
             if (!file.isFile || offset < 0L || size < 0L) return null
