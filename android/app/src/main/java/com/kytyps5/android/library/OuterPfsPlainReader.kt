@@ -57,11 +57,11 @@ class OuterPfsPlainReader private constructor(
         val directoryBytes = readInodeBytes(uroot, MAX_DIRECTORY_BYTES) ?: return null
         val parsed = parseDirectory(directoryBytes, inodes.size) ?: return null
         val result = ArrayList<OuterPfsFileInfo>(parsed.size)
-        val names = HashSet<String>(String.CASE_INSENSITIVE_ORDER)
+        val names = HashSet<String>()
 
         for (entry in parsed) {
             if (entry.name == "." || entry.name == "..") continue
-            if (!names.add(entry.name)) return null
+            if (!names.add(entry.name.lowercase(java.util.Locale.ROOT))) return null
             val inode = inodes.getOrNull(entry.inodeIndex) ?: return null
             val directory = entry.type == DIRENT_DIRECTORY
             val expectedMode = if (directory) MODE_DIRECTORY else MODE_FILE
