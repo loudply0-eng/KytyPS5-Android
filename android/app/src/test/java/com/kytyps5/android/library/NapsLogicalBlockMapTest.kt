@@ -22,7 +22,7 @@ class NapsLogicalBlockMapTest {
         assertEquals(0L, map.blocks.single().sourceOffset)
         assertEquals(0x40000, map.blocks.single().sourceLength)
         assertEquals(NapsBlockStorage.STORED, map.blocks.single().storage)
-        assertEquals(1, map.blocks.single().runRecordIndex)
+        assertEquals(0, map.blocks.single().runRecordIndex)
     }
 
     @Test
