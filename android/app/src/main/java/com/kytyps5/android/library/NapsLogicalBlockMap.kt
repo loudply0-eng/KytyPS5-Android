@@ -157,25 +157,6 @@ data class NapsLogicalBlockMap(
     }
 
     companion object {
-            NapsBlockStorage.ZERO_HOLE -> null
-            NapsBlockStorage.STORED, NapsBlockStorage.KRAKEN -> {
-                if (payloadBlock.sourceOffset < 0L || payloadBlock.sourceLength <= 0) return null
-                val data = readRange(payloadBlock.sourceOffset, payloadBlock.sourceLength) ?: return null
-                if (data.size != payloadBlock.sourceLength) return null
-                data
-            }
-            NapsBlockStorage.ALIAS -> return null
-        }
-        return NapsPayloadRead(
-            logicalBlockIndex = blockIndex,
-            logicalBlock = logical,
-            payloadBlockIndex = payloadIndex,
-            payloadBlock = payloadBlock,
-            payloadBytes = bytes,
-        )
-    }
-
-    companion object {
         private const val LOGICAL_BLOCK_SIZE = 0x40000L
         private const val CHUNK_SIZE = 0x20000
         private const val MODULO_MASK = 0x3ffffL
