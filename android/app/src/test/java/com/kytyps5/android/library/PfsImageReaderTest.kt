@@ -42,6 +42,19 @@ class PfsImageReaderTest {
     }
 
     @Test
+    fun readsFileUsingSingleIndirectBlockPointer() {
+        val file = buildPfsWithSingleIndirect()
+        PfsImageReader.open(file)?.use { reader ->
+            val bytes = reader.readFile("sce_sys/large.bin", 13L * BLOCK_SIZE)
+            assertNotNull(bytes)
+            assertEquals((13L * BLOCK_SIZE).toInt(), bytes!!.size)
+            assertEquals(5.toByte(), bytes[0])
+            assertEquals(16.toByte(), bytes[(11L * BLOCK_SIZE).toInt()])
+            assertEquals(0x5a.toByte(), bytes[(12L * BLOCK_SIZE).toInt()])
+        } ?: throw AssertionError("Expected supported PFS image")
+    }
+
+    @Test
     fun refusesEncryptedSignedAndWideInodeImages() {
         val encrypted = buildPfs("encrypted.pfs", mode = 0x000c)
         val signed = buildPfs("signed.pfs", mode = 0x0009)
@@ -117,6 +130,71 @@ class PfsImageReaderTest {
             writeBlock(raf, 4, sceSysEntries)
             raf.seek(5L * BLOCK_SIZE)
             raf.write(json)
+        }
+        return file
+    }
+
+    private fun buildPfsWithSingleIndirect(): File {
+        val file = File(root, "single-indirect.pfs")
+        val size = 13L * BLOCK_SIZE
+        val superRootEntries = dirents(
+            Entry(0, 4, "."),
+            Entry(0, 5, ".."),
+            Entry(1, 3, "uroot"),
+        )
+        val rootEntries = dirents(
+            Entry(1, 4, "."),
+            Entry(0, 5, ".."),
+            Entry(2, 3, "sce_sys"),
+        )
+        val sceSysEntries = dirents(
+            Entry(2, 4, "."),
+            Entry(1, 5, ".."),
+            Entry(3, 2, "large.bin"),
+        )
+
+        RandomAccessFile(file, "rw").use { raf ->
+            raf.setLength(19L * BLOCK_SIZE)
+            putLe64(raf, 0x00, 2L)
+            putLe64(raf, 0x08, 20130315L)
+            putLe16(raf, 0x1c, 0x0008)
+            putLe32(raf, 0x20, BLOCK_SIZE)
+            putLe32(raf, 0x24, 0)
+            putLe64(raf, 0x28, 1L)
+            putLe64(raf, 0x30, 4L)
+            putLe64(raf, 0x38, 17L)
+            putLe64(raf, 0x40, 1L)
+            putLe64(raf, 0x48, 0L)
+
+            writeInode(raf, 0, INODE_DIR, superRootEntries.size.toLong(), 2L)
+            writeInode(raf, 1, INODE_DIR, rootEntries.size.toLong(), 3L)
+            writeInode(raf, 2, INODE_DIR, sceSysEntries.size.toLong(), 4L)
+
+            val inodeOffset = BLOCK_SIZE + 3L * INODE_SIZE
+            raf.seek(inodeOffset)
+            raf.write(byteArrayOf(INODE_FILE.toByte(), (INODE_FILE ushr 8).toByte()))
+            raf.seek(inodeOffset + 8L)
+            writeLe64(raf, size)
+            raf.seek(inodeOffset + 0x10L)
+            writeLe64(raf, size)
+            raf.seek(inodeOffset + 0x60L)
+            writeLe32(raf, 14L) // 13 data blocks plus the indirect pointer block.
+            for (index in 0 until 12) {
+                raf.seek(inodeOffset + 0x64L + index * 4L)
+                writeLe32(raf, 5L + index)
+            }
+            raf.seek(inodeOffset + 0x94L)
+            writeLe32(raf, 17L)
+
+            writeBlock(raf, 2, superRootEntries)
+            writeBlock(raf, 3, rootEntries)
+            writeBlock(raf, 4, sceSysEntries)
+            for (index in 0 until 12) {
+                writeBlock(raf, 5L + index, ByteArray(BLOCK_SIZE.toInt()) { (5 + index).toByte() })
+            }
+            raf.seek(17L * BLOCK_SIZE)
+            writeLe32(raf, 18L)
+            writeBlock(raf, 18, ByteArray(BLOCK_SIZE.toInt()) { 0x5a.toByte() })
         }
         return file
     }
