@@ -15,7 +15,7 @@ class OuterPfsPlainReaderTest {
         try {
             val probe = PkgProbe.probe(packageFile)
             assertEquals(PkgProbeResult.Kind.PS5_FIH, probe.kind)
-            assertEquals(0x80, probe.pfsSuperblockOffset)
+            assertEquals(0x30000L, probe.pfsSuperblockOffset)
 
             val reader = OuterPfsPlainReader.open(packageFile, probe)
             assertNotNull(reader)
