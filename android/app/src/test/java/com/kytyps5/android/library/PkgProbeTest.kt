@@ -59,7 +59,7 @@ class PkgProbeTest {
             putLe16(raf, 0x2001cL, 0x0008)
             putLe32(raf, 0x20020L, 0x10000L)
             putLe32(raf, 0x20024L, 0L)
-            putLe64(raf, 0x20028L, 2L)
+            putLe64(raf, 0x20028L, 1L)
             putLe64(raf, 0x20030L, 1L)
             putLe64(raf, 0x20038L, 1L)
             putLe64(raf, 0x20040L, 1L)
