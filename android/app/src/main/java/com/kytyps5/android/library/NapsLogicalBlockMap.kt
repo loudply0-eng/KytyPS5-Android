@@ -512,7 +512,7 @@ data class NapsLogicalBlockMap(
                 if (mappedIndex != expectedIndex.toLong()) return null
             }
 
-            val payloadStarts = restoredStarts.dropLast(1).toHashSet()
+            val payloadStarts = restoredStarts.toList().dropLast(1).toHashSet()
             val holeStarts = restored.asSequence()
                 .filter { it.storage == NapsBlockStorage.ZERO_HOLE }
                 .map { it.logicalOffset }
