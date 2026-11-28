@@ -288,6 +288,73 @@ class NapsLogicalBlockMapTest {
         assertNull(NapsLogicalBlockMap.parse(blob, 0x20000L))
     }
 
+    @Test
+    fun readsUnalignedLogicalRangeAcrossStoredBlockAndZeroHole() {
+        val map = NapsLogicalBlockMap.parse(
+            fixture(
+                logicalLengths = listOf(0x10000, 0x10000),
+                storage = listOf(Storage.STORED, Storage.ZERO_HOLE),
+                fileStarts = listOf(0L, 0x10000L),
+            ),
+            0x10008L,
+        )!!
+        val source = ByteArray(0x10000) { (it and 0xff).toByte() }
+
+        val bytes = map.readLogicalRange(0xfff0L, 32) { offset, length ->
+            assertEquals(0xfff0L, offset)
+            assertEquals(16, length)
+            source.copyOfRange(offset.toInt(), offset.toInt() + length)
+        }
+
+        assertNotNull(bytes)
+        assertArrayEquals(
+            source.copyOfRange(0xfff0, 0x10000) + ByteArray(16),
+            bytes,
+        )
+    }
+
+    @Test
+    fun readsAliasSubrangeFromItsEarlierStoredSource() {
+        val map = NapsLogicalBlockMap.parse(
+            fixture(
+                logicalLengths = listOf(0x10000, 0x10000),
+                storage = listOf(Storage.STORED, Storage.ALIAS),
+                fileStarts = listOf(0L, 0x10000L),
+                secondRunPage = 0,
+            ),
+            0x10000L,
+        )!!
+        val source = ByteArray(0x10000) { (it and 0xff).toByte() }
+
+        val bytes = map.readLogicalRange(0x10020L, 16) { offset, length ->
+            assertEquals(0x20L, offset)
+            assertEquals(16, length)
+            source.copyOfRange(offset.toInt(), offset.toInt() + length)
+        }
+
+        assertNotNull(bytes)
+        assertArrayEquals(source.copyOfRange(0x20, 0x30), bytes)
+    }
+
+    @Test
+    fun rejectsLogicalRangesThatNeedKrakenOrExceedImageBounds() {
+        val map = NapsLogicalBlockMap.parse(
+            fixture(
+                logicalLengths = listOf(0x10000),
+                storage = listOf(Storage.KRAKEN),
+                fileStarts = listOf(0L),
+            ),
+            0x200L,
+        )!!
+
+        assertNull(map.readLogicalRange(0L, 16) { _, _ ->
+            throw AssertionError("Kraken ranges must be rejected before reading packed bytes")
+        })
+        assertNull(map.readLogicalRange(-1L, 1) { _, _ -> null })
+        assertNull(map.readLogicalRange(map.logicalSize, 1) { _, _ -> null })
+        assertArrayEquals(ByteArray(0), map.readLogicalRange(map.logicalSize, 0) { _, _ -> null })
+    }
+
     private enum class Storage { STORED, KRAKEN, ZERO_HOLE, ALIAS }
 
     /**

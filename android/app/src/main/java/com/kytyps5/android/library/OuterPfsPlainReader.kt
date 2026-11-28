@@ -41,6 +41,7 @@ class OuterPfsPlainReader private constructor(
 
     private var inodeCache: Array<OuterInode>? = null
     private var filesCache: List<OuterPfsFileInfo>? = null
+    private var napsMapCache: NapsLogicalBlockMap? = null
 
     /** The packed pfs_image.dat byte region before the outer plaintext superblock. */
     val packedImageSize: Long
@@ -98,10 +99,13 @@ class OuterPfsPlainReader private constructor(
         return readFile(NAPS_LAYOUT_NAME, MAX_NAPS_BYTES)
     }
 
-    /** Builds a validated contiguous NAPS map against the actual packed-image region length. */
+    /** Builds and caches a validated NAPS map against the actual packed-image region length. */
     fun readNapsLogicalBlockMap(): NapsLogicalBlockMap? {
+        napsMapCache?.let { return it }
         val naps = readNapsLayout() ?: return null
-        return NapsLogicalBlockMap.parse(naps, packedImageSize)
+        val map = NapsLogicalBlockMap.parse(naps, packedImageSize) ?: return null
+        napsMapCache = map
+        return map
     }
 
     /**
@@ -113,6 +117,17 @@ class OuterPfsPlainReader private constructor(
         val map = readNapsLogicalBlockMap() ?: return null
         return map.readPayload(blockIndex) { offset, length ->
             readPackedImageRegion(offset, length)
+        }
+    }
+
+    /**
+     * Reads up to 16 MiB from the reconstructed logical inner image without creating a
+     * temporary full-size image. Returns null if the requested range needs Kraken decoding.
+     */
+    fun readNapsLogicalRange(offset: Long, length: Int): ByteArray? {
+        val map = readNapsLogicalBlockMap() ?: return null
+        return map.readLogicalRange(offset, length) { sourceOffset, sourceLength ->
+            readPackedImageRegion(sourceOffset, sourceLength)
         }
     }
 

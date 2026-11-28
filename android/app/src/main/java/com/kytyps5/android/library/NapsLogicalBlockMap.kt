@@ -94,6 +94,91 @@ data class NapsLogicalBlockMap(
     }
 
     /**
+     * Reads a bounded logical byte range without reconstructing the complete image.
+     *
+     * Stored blocks are fetched only for the requested sub-range. Zero holes are synthesized
+     * in memory, and aliases resolve to their earlier source block. Any range intersecting a
+     * Kraken block is rejected because this reader does not decompress payloads.
+     *
+     * The maximum single allocation is 16 MiB. The callback must return exactly the requested
+     * number of packed bytes.
+     */
+    fun readLogicalRange(
+        offset: Long,
+        length: Int,
+        readRange: (offset: Long, length: Int) -> ByteArray?,
+    ): ByteArray? {
+        if (offset < 0L || length < 0 ||
+            length > MAX_LOGICAL_RANGE_BYTES ||
+            offset > logicalSize ||
+            length.toLong() > logicalSize - offset
+        ) return null
+        if (length == 0) return ByteArray(0)
+
+        return try {
+            val output = ByteArray(length)
+            val end = Math.addExact(offset, length.toLong())
+            var low = 0
+            var high = blocks.size
+            while (low < high) {
+                val middle = (low + high) ushr 1
+                val candidate = blocks[middle]
+                if (candidate.logicalLength <= 0 || candidate.logicalOffset < 0L) return null
+                val candidateEnd = Math.addExact(
+                    candidate.logicalOffset,
+                    candidate.logicalLength.toLong(),
+                )
+                if (candidateEnd <= offset) low = middle + 1 else high = middle
+            }
+
+            var blockIndex = low
+            var cursor = offset
+            while (cursor < end) {
+                val logicalBlock = blocks.getOrNull(blockIndex) ?: return null
+                if (logicalBlock.logicalLength <= 0 || logicalBlock.logicalOffset < 0L) return null
+                val logicalBlockEnd = Math.addExact(
+                    logicalBlock.logicalOffset,
+                    logicalBlock.logicalLength.toLong(),
+                )
+                if (logicalBlock.logicalOffset > cursor || logicalBlockEnd <= cursor) return null
+
+                val take = minOf(end, logicalBlockEnd) - cursor
+                if (take <= 0L || take > Int.MAX_VALUE.toLong()) return null
+                val takeBytes = take.toInt()
+                val outputOffset = (cursor - offset).toInt()
+                val resolved = resolvePayloadBlock(blockIndex) ?: return null
+                val payloadBlock = resolved.second
+                val sourceDelta = cursor - logicalBlock.logicalOffset
+                val sourceEnd = Math.addExact(sourceDelta, take)
+
+                when (payloadBlock.storage) {
+                    NapsBlockStorage.ZERO_HOLE -> {
+                        output.fill(0, outputOffset, outputOffset + takeBytes)
+                    }
+                    NapsBlockStorage.STORED -> {
+                        if (payloadBlock.sourceOffset < 0L ||
+                            sourceEnd > payloadBlock.sourceLength.toLong() ||
+                            sourceEnd > payloadBlock.logicalLength.toLong()
+                        ) return null
+                        val sourceOffset = Math.addExact(payloadBlock.sourceOffset, sourceDelta)
+                        val bytes = readRange(sourceOffset, takeBytes) ?: return null
+                        if (bytes.size != takeBytes) return null
+                        bytes.copyInto(output, outputOffset)
+                    }
+                    NapsBlockStorage.KRAKEN -> return null
+                    NapsBlockStorage.ALIAS -> return null
+                }
+
+                cursor = Math.addExact(cursor, take)
+                blockIndex++
+            }
+            output
+        } catch (_: ArithmeticException) {
+            null
+        }
+    }
+
+    /**
      * Reconstructs the logical image sequentially to [output], without materializing it in memory.
      * Stored spans, aliases, and zero holes are supported. If any logical block resolves to Kraken,
      * NEEDS_KRAKEN is returned before writing any output bytes. The caller owns [output].
@@ -160,6 +245,7 @@ data class NapsLogicalBlockMap(
         private const val LOGICAL_BLOCK_SIZE = 0x40000L
         private const val CHUNK_SIZE = 0x20000
         private const val MODULO_MASK = 0x3ffffL
+        private const val MAX_LOGICAL_RANGE_BYTES = 16 * 1024 * 1024
         private const val MAX_MAPPED_BLOCKS = 250_000
         private const val MAX_MAPPED_PAGES = 250_000
         private const val SPARSE_FIDX_MARKER = 0x40
