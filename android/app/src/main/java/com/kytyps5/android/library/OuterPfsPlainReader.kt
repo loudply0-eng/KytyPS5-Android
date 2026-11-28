@@ -39,7 +39,7 @@ class OuterPfsPlainReader private constructor(
     private val inodeTableStart: Int,
 ) : Closeable {
 
-    private var inodeCache: Array<OuterInode>? = null
+    private var inodeCache: OuterInodeTable? = null
     private var filesCache: List<OuterPfsFileInfo>? = null
     private var napsMapCache: NapsLogicalBlockMap? = null
 
@@ -166,7 +166,11 @@ class OuterPfsPlainReader private constructor(
         raf.close()
     }
 
-    private fun readInodes(): Array<OuterInode>? {
+    /**
+     * Validates the complete inode-table geometry but defers decoding individual records
+     * until they are actually referenced by a directory entry or file operation.
+     */
+    private fun readInodes(): OuterInodeTable? {
         inodeCache?.let { return it }
         val inodeCount = superblockInfo.inodeCount
         val inodeBlockCount = superblockInfo.inodeBlockCount
@@ -181,25 +185,8 @@ class OuterPfsPlainReader private constructor(
 
         val first = Math.multiplyExact(inodeTableStart.toLong(), BLOCK_SIZE)
         if (!rangeFits(first, tableBytes, pfsSize)) return null
-        val raw = readPfsBytes(first, tableBytes.toInt()) ?: return null
 
-        val parsed = Array(inodeCount.toInt()) { index ->
-            val start = index * S32_INODE_SIZE
-            val bytes = raw
-            val mode = u16(bytes, start)
-            val size = i64(bytes, start + 8)
-            val compressedSize = i64(bytes, start + 16)
-            val blocks = u32(bytes, start + S32_BLOCK_COUNT_OFFSET)
-            val direct = IntArray(DIRECT_BLOCK_COUNT) { slot ->
-                signedBlockIndex(bytes, start + S32_DIRECT_OFFSET + slot * BLOCK_SIG32_STRIDE + BLOCK_INDEX_OFFSET)
-            }
-            val indirect = IntArray(INDIRECT_LEVEL_COUNT) { slot ->
-                signedBlockIndex(bytes, start + S32_INDIRECT_OFFSET + slot * BLOCK_SIG32_STRIDE + BLOCK_INDEX_OFFSET)
-            }
-            OuterInode(mode, size, compressedSize, blocks, direct, indirect)
-        }
-        inodeCache = parsed
-        return parsed
+        return OuterInodeTable(first, inodeCount.toInt()).also { inodeCache = it }
     }
 
     private fun readInodeBytes(inode: OuterInode, maxBytes: Long): ByteArray? {
@@ -336,6 +323,44 @@ class OuterPfsPlainReader private constructor(
             null
         } catch (_: SecurityException) {
             null
+        }
+    }
+
+    /**
+     * Bounded lazy view of the S32 inode table. Only referenced inode records are read,
+     * avoiding a table-sized byte array and eager per-inode block-pointer allocations.
+     */
+    private inner class OuterInodeTable(
+        private val tableStart: Long,
+        val size: Int,
+    ) {
+        private val cache = arrayOfNulls<OuterInode>(size)
+
+        fun getOrNull(index: Int): OuterInode? {
+            if (index !in cache.indices) return null
+            cache[index]?.let { return it }
+
+            val offset = try {
+                Math.addExact(
+                    tableStart,
+                    Math.multiplyExact(index.toLong(), S32_INODE_SIZE.toLong()),
+                )
+            } catch (_: ArithmeticException) {
+                return null
+            }
+            val bytes = readPfsBytes(offset, S32_INODE_SIZE) ?: return null
+            val mode = u16(bytes, 0)
+            val size = i64(bytes, 8)
+            val compressedSize = i64(bytes, 16)
+            val blocks = u32(bytes, S32_BLOCK_COUNT_OFFSET)
+            val direct = IntArray(DIRECT_BLOCK_COUNT) { slot ->
+                signedBlockIndex(bytes, S32_DIRECT_OFFSET + slot * BLOCK_SIG32_STRIDE + BLOCK_INDEX_OFFSET)
+            }
+            val indirect = IntArray(INDIRECT_LEVEL_COUNT) { slot ->
+                signedBlockIndex(bytes, S32_INDIRECT_OFFSET + slot * BLOCK_SIG32_STRIDE + BLOCK_INDEX_OFFSET)
+            }
+            return OuterInode(mode, size, compressedSize, blocks, direct, indirect)
+                .also { cache[index] = it }
         }
     }
 
