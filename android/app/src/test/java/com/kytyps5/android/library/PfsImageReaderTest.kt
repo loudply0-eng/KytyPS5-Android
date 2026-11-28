@@ -104,6 +104,111 @@ class PfsImageReaderTest {
     }
 
     @Test
+    fun readsFileUsingDoubleIndirectBlockPointers() {
+        val file = buildPfsWithDoubleIndirect()
+        PfsImageReader.open(file)?.use { reader ->
+            val bytes = reader.readFile("sce_sys/large.bin", maxBytes = 5L * 1024L * 1024L)
+            assertNotNull(bytes)
+            assertEquals((1037L * 0x1000L).toInt(), bytes!!.size)
+            assertEquals(1.toByte(), bytes[0])
+            assertEquals(12.toByte(), bytes[(11L * 0x1000L).toInt()])
+            assertEquals(13.toByte(), bytes[(12L * 0x1000L).toInt()])
+            assertEquals(76.toByte(), bytes[(1035L * 0x1000L).toInt()])
+            assertEquals(77.toByte(), bytes[(1036L * 0x1000L).toInt()])
+        } ?: throw AssertionError("Expected supported PFS image")
+    }
+
+    private fun buildPfsWithDoubleIndirect(): File {
+        val blockSize = 0x1000L
+        val dataBlockCount = 1037L
+        val dataStartBlock = 5L
+        val firstIndirectDataBlock = dataStartBlock + 12L
+        val leafOne = dataStartBlock + dataBlockCount
+        val leafTwo = leafOne + 1L
+        val root = leafTwo + 1L
+        val totalBlocks = 1L + 1L + 1043L // superblock + inode table + data/pointer blocks
+        val file = File(root, "double-indirect.pfs")
+
+        val superRootEntries = dirents(
+            Entry(0, 4, "."),
+            Entry(0, 5, ".."),
+            Entry(1, 3, "uroot"),
+        )
+        val rootEntries = dirents(
+            Entry(1, 4, "."),
+            Entry(0, 5, ".."),
+            Entry(2, 3, "sce_sys"),
+        )
+        val sceSysEntries = dirents(
+            Entry(2, 4, "."),
+            Entry(1, 5, ".."),
+            Entry(3, 2, "large.bin"),
+        )
+
+        RandomAccessFile(file, "rw").use { raf ->
+            raf.setLength(totalBlocks * blockSize)
+            putLe64(raf, 0x00, 2L)
+            putLe64(raf, 0x08, 20130315L)
+            putLe16(raf, 0x1c, 0x0008)
+            putLe32(raf, 0x20, blockSize)
+            putLe32(raf, 0x24, 0L)
+            putLe64(raf, 0x28, 1L)
+            putLe64(raf, 0x30, 4L)
+            putLe64(raf, 0x38, 1043L)
+            putLe64(raf, 0x40, 1L)
+            putLe64(raf, 0x48, 0L)
+
+            fun writeInodeRecord(index: Int, mode: Int, size: Long, blocks: Long, direct: LongArray = LongArray(12), indirectRoot: Long = 0L) {
+                val offset = blockSize + index.toLong() * INODE_SIZE
+                putLe16(raf, offset, mode)
+                putLe64(raf, offset + 8L, size)
+                putLe64(raf, offset + 0x10L, size)
+                putLe32(raf, offset + 0x60L, blocks)
+                direct.forEachIndexed { slot, block ->
+                    putLe32(raf, offset + 0x64L + slot * 4L, block)
+                }
+                putLe32(raf, offset + 0x94L, indirectRoot)
+            }
+
+            writeInodeRecord(0, INODE_DIR, superRootEntries.size.toLong(), 1L, longArrayOf(2L))
+            writeInodeRecord(1, INODE_DIR, rootEntries.size.toLong(), 1L, longArrayOf(3L))
+            writeInodeRecord(2, INODE_DIR, sceSysEntries.size.toLong(), 1L, longArrayOf(4L))
+            val direct = LongArray(12) { slot -> dataStartBlock + slot }
+            writeInodeRecord(
+                3,
+                INODE_FILE,
+                dataBlockCount * blockSize,
+                dataBlockCount + 3L,
+                direct,
+                root,
+            )
+
+            raf.seek(2L * blockSize); raf.write(superRootEntries)
+            raf.seek(3L * blockSize); raf.write(rootEntries)
+            raf.seek(4L * blockSize); raf.write(sceSysEntries)
+
+            // File data blocks: 12 direct blocks, then 1024 + 1 through two leaf tables.
+            repeat(dataBlockCount.toInt()) { logical ->
+                val data = ByteArray(blockSize.toInt()) { ((logical % 240) + 1).toByte() }
+                raf.seek((dataStartBlock + logical) * blockSize)
+                raf.write(data)
+            }
+
+            // First leaf contains 1024 data block pointers; second leaf contains the last pointer.
+            raf.seek(leafOne * blockSize)
+            repeat(1024) { slot -> writeLe32(raf, firstIndirectDataBlock + slot) }
+            raf.seek(leafTwo * blockSize)
+            writeLe32(raf, firstIndirectDataBlock + 1024L)
+
+            // Double-indirect root selects the leaf containing the requested data pointer.
+            raf.seek(root * blockSize)
+            writeLe32(raf, leafOne)
+            writeLe32(raf, leafTwo)
+        }
+        return file
+    }
+
+    @Test
     fun refusesEncryptedSignedAndWideInodeImages() {
         val encrypted = buildPfs("encrypted.pfs", mode = 0x000c)
         val signed = buildPfs("signed.pfs", mode = 0x0009)

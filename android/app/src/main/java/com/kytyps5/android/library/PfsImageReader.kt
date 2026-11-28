@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 /**
  * Read-only reader for a deliberately narrow PFS subset:
  * unsigned 32-bit inodes, plaintext data, standard 0xA8-byte inode records,
- * direct blocks and one level of indirect blocks.
+ * direct blocks and up to five levels of indirect blocks.
  *
  * This is intended for an already available inner PFS image. It does not read
  * PS5 outer-PFS signatures, decrypt sectors, decode PFSC, or install packages.
@@ -183,23 +183,17 @@ class PfsImageReader private constructor(
         val pointersPerBlock = blockSize / 4L
         val firstDataBlock = 1L + superblock.inodeBlockCount
         val dataBlockLimit = firstDataBlock + superblock.dataBlockCount
-        if (blockCount > DIRECT_BLOCK_COUNT + pointersPerBlock) return null
-
         val out = ByteArray(size.toInt())
         var outputOffset = 0
         var logicalBlock = 0L
         while (logicalBlock < blockCount) {
-            val blockNumber = if (logicalBlock < DIRECT_BLOCK_COUNT) {
-                inode.direct[logicalBlock.toInt()]
-            } else {
-                val indirectBlock = inode.indirect[0]
-                if (indirectBlock < firstDataBlock || indirectBlock >= dataBlockLimit) return null
-                val pointerOffset = segmentOffset + indirectBlock * blockSize + (logicalBlock - DIRECT_BLOCK_COUNT) * 4L
-                if (!rangeFits(indirectBlock * blockSize, blockSize, segmentSize) ||
-                    !rangeFits(pointerOffset - segmentOffset, 4L, segmentSize)
-                ) return null
-                readU32At(pointerOffset) ?: return null
-            }
+            val blockNumber = resolveDataBlockPointer(
+                inode = inode,
+                logicalBlock = logicalBlock,
+                pointersPerBlock = pointersPerBlock,
+                firstDataBlock = firstDataBlock,
+                dataBlockLimit = dataBlockLimit,
+            ) ?: return null
             if (blockNumber < firstDataBlock || blockNumber >= dataBlockLimit ||
                 blockNumber >= segmentSize / blockSize
             ) return null
@@ -217,6 +211,74 @@ class PfsImageReader private constructor(
             logicalBlock++
         }
         return out
+    }
+
+    /**
+     * Resolves a file-relative data block through the inode's direct, single-, double-,
+     * triple-, or higher-level indirect pointer roots. Every pointer block and resulting
+     * data block must remain inside the validated PFS data region.
+     */
+    private fun resolveDataBlockPointer(
+        inode: PfsInode,
+        logicalBlock: Long,
+        pointersPerBlock: Long,
+        firstDataBlock: Long,
+        dataBlockLimit: Long,
+    ): Long? {
+        if (logicalBlock < 0L || pointersPerBlock <= 0L) return null
+        if (logicalBlock < DIRECT_BLOCK_COUNT) {
+            return inode.direct.getOrNull(logicalBlock.toInt())
+        }
+
+        var remaining = logicalBlock - DIRECT_BLOCK_COUNT
+        var capacity = pointersPerBlock
+        var selectedLevel = -1
+        for (level in inode.indirect.indices) {
+            if (remaining < capacity) {
+                selectedLevel = level
+                break
+            }
+            if (level < inode.indirect.lastIndex) {
+                if (capacity > Long.MAX_VALUE / pointersPerBlock) break
+                capacity *= pointersPerBlock
+            }
+        }
+        if (selectedLevel < 0) return null
+
+        var pointerBlock = inode.indirect[selectedLevel]
+        if (pointerBlock < firstDataBlock || pointerBlock >= dataBlockLimit) return null
+        var slotDivisor = capacity / pointersPerBlock
+
+        for (depth in selectedLevel downTo 0) {
+            val slot = remaining / slotDivisor
+            if (slot !in 0 until pointersPerBlock) return null
+
+            val pointerBlockOffset = try {
+                Math.multiplyExact(pointerBlock, superblock.blockSize)
+            } catch (_: ArithmeticException) {
+                return null
+            }
+            if (!rangeFits(pointerBlockOffset, superblock.blockSize, segmentSize)) return null
+
+            val slotOffset = try {
+                Math.multiplyExact(slot, 4L)
+            } catch (_: ArithmeticException) {
+                return null
+            }
+            val pointerOffset = try {
+                Math.addExact(segmentOffset, Math.addExact(pointerBlockOffset, slotOffset))
+            } catch (_: ArithmeticException) {
+                return null
+            }
+            val nextBlock = readU32At(pointerOffset) ?: return null
+            if (nextBlock < firstDataBlock || nextBlock >= dataBlockLimit) return null
+
+            if (depth == 0) return nextBlock
+            pointerBlock = nextBlock
+            remaining %= slotDivisor
+            slotDivisor /= pointersPerBlock
+        }
+        return null
     }
 
     private fun readBytes(absoluteOffset: Long, count: Int): ByteArray? {
