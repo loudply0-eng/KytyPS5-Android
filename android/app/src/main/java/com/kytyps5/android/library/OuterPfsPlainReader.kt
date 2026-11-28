@@ -131,6 +131,18 @@ class OuterPfsPlainReader private constructor(
         }
     }
 
+    /**
+     * Opens the mapped inner PFS as a virtual random-access source, without constructing
+     * a full temporary image file. The returned PFS reader must be closed before this reader.
+     * It returns null when the PFS metadata touches a Kraken-compressed range.
+     */
+    fun openMappedInnerPfsReader(): PfsImageReader? {
+        val map = readNapsLogicalBlockMap() ?: return null
+        return PfsImageReader.open(NapsMappedPfsImageSource(map) { offset, length ->
+            readPackedImageRegion(offset, length)
+        })
+    }
+
     /** Streams a raw-only reconstructed inner image to the caller-owned output stream. */
     fun writeUncompressedNapsImage(output: java.io.OutputStream): NapsImageBuildResult {
         val map = readNapsLogicalBlockMap() ?: return NapsImageBuildResult.INVALID_PAYLOAD

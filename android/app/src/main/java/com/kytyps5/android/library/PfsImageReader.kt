@@ -3,7 +3,6 @@ package com.kytyps5.android.library
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -25,7 +24,7 @@ data class PfsImageEntry(
 )
 
 class PfsImageReader private constructor(
-    private val raf: RandomAccessFile,
+    private val source: PfsImageSource,
     private val segmentOffset: Long,
     private val segmentSize: Long,
     val superblock: PfsSuperblockInfo,
@@ -71,7 +70,7 @@ class PfsImageReader private constructor(
     }
 
     override fun close() {
-        raf.close()
+        source.close()
     }
 
     private fun scanTree(): List<PfsImageEntry> {
@@ -207,8 +206,8 @@ class PfsImageReader private constructor(
             val count = minOf(blockSize.toInt(), out.size - outputOffset)
             val blockOffset = segmentOffset + blockNumber * blockSize
             if (!rangeFits(blockNumber * blockSize, count.toLong(), segmentSize)) return null
-            raf.seek(blockOffset)
-            raf.readFully(out, outputOffset, count)
+            val blockBytes = readBytes(blockOffset, count) ?: return null
+            blockBytes.copyInto(out, outputOffset)
             outputOffset += count
             logicalBlock++
         }
@@ -219,10 +218,7 @@ class PfsImageReader private constructor(
         if (count < 0 || absoluteOffset < segmentOffset ||
             !rangeFits(absoluteOffset - segmentOffset, count.toLong(), segmentSize)
         ) return null
-        return ByteArray(count).also {
-            raf.seek(absoluteOffset)
-            raf.readFully(it)
-        }
+        return source.readAt(absoluteOffset, count)
     }
 
     private fun readU32At(absoluteOffset: Long): Long? {
@@ -272,33 +268,53 @@ class PfsImageReader private constructor(
 
         fun open(file: File, offset: Long = 0L, size: Long = file.length()): PfsImageReader? {
             if (!file.isFile || offset < 0L || size < 0L) return null
-            val raf = try { RandomAccessFile(file, "r") } catch (_: IOException) { return null }
+            val source = try {
+                FilePfsImageSource(file)
+            } catch (_: IOException) {
+                return null
+            } catch (_: SecurityException) {
+                return null
+            }
+            return open(source, offset, size)
+        }
+
+        /**
+         * Opens a plaintext inner PFS from any bounded random-access source.
+         * Ownership of [source] is transferred to the returned reader, or released on failure.
+         */
+        internal fun open(
+            source: PfsImageSource,
+            offset: Long = 0L,
+            size: Long = source.length,
+        ): PfsImageReader? {
+            fun reject(): PfsImageReader? {
+                runCatching { source.close() }
+                return null
+            }
+            if (offset < 0L || size < 0L || !rangeFits(offset, size, source.length)) return reject()
             try {
-                if (!rangeFits(offset, size, raf.length())) return null.also { raf.close() }
-                val sb = PfsSuperblockReader.read(raf, offset, size) ?: return null.also { raf.close() }
+                val sb = PfsSuperblockReader.read(source, offset, size) ?: return reject()
                 // This reader deliberately refuses signed, 64-bit, or encrypted PFS variants.
-                if (sb.signedInodes || sb.wideInodes || sb.encrypted) return null.also { raf.close() }
+                if (sb.signedInodes || sb.wideInodes || sb.encrypted) return reject()
                 val inodeSlots = sb.blockSize / INODE_SIZE
                 if (inodeSlots <= 0L || sb.inodeBlockCount > Long.MAX_VALUE / inodeSlots ||
                     sb.inodeCount > sb.inodeBlockCount * inodeSlots ||
                     sb.inodeBlockCount > Long.MAX_VALUE / sb.blockSize
-                ) {
-                    return null.also { raf.close() }
-                }
+                ) return reject()
                 val inodeBytes = sb.inodeBlockCount * sb.blockSize
                 if (!rangeFits(sb.blockSize, inodeBytes, size) ||
                     sb.inodeBlockCount >= Long.MAX_VALUE ||
                     sb.dataBlockCount > Long.MAX_VALUE - (1L + sb.inodeBlockCount)
-                ) return null.also { raf.close() }
+                ) return reject()
                 val dataBlockLimit = 1L + sb.inodeBlockCount + sb.dataBlockCount
-                if (dataBlockLimit > size / sb.blockSize) return null.also { raf.close() }
-                return PfsImageReader(raf, offset, size, sb, inodeSlots)
+                if (dataBlockLimit > size / sb.blockSize) return reject()
+                return PfsImageReader(source, offset, size, sb, inodeSlots)
             } catch (_: IOException) {
-                raf.close()
-                return null
+                return reject()
             } catch (_: SecurityException) {
-                raf.close()
-                return null
+                return reject()
+            } catch (_: ArithmeticException) {
+                return reject()
             }
         }
 

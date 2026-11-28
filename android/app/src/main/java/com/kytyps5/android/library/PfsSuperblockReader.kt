@@ -77,6 +77,46 @@ object PfsSuperblockReader {
      * Reads the 0x50-byte little-endian superblock at [offset] within a bounded PFS segment.
      * Returns null for truncated, out-of-range, or internally inconsistent geometry.
      */
+    internal fun read(source: PfsImageSource, offset: Long, segmentSize: Long): PfsSuperblockInfo? {
+        if (offset < 0L || segmentSize < HEADER_SIZE || offset > source.length ||
+            segmentSize > source.length - offset
+        ) return null
+        val bytes = source.readAt(offset, HEADER_SIZE.toInt()) ?: return null
+        if (bytes.size != HEADER_SIZE.toInt()) return null
+
+        val version = readLe64(bytes, 0)
+        val magic = readLe64(bytes, 8)
+        val mode = readLe16(bytes, 0x1c).toInt()
+        val blockSize = readLe32(bytes, 0x20)
+        val backupCount = readLe32(bytes, 0x24)
+        val nBlock = readLe64(bytes, 0x28)
+        val inodeCount = readLe64(bytes, 0x30)
+        val dataBlockCount = readLe64(bytes, 0x38)
+        val inodeBlockCount = readLe64(bytes, 0x40)
+        val superRootInode = readLe64(bytes, 0x48)
+
+        if (version != PS5_VERSION || magic != PS5_MAGIC) return null
+        if (blockSize !in MIN_BLOCK_SIZE..MAX_BLOCK_SIZE ||
+            (blockSize and (blockSize - 1L)) != 0L
+        ) return null
+        if (backupCount < 0L || nBlock < 0L || inodeCount <= 0L ||
+            dataBlockCount < 0L || inodeBlockCount <= 0L ||
+            superRootInode < 0L || superRootInode >= inodeCount
+        ) return null
+
+        return PfsSuperblockInfo(
+            version = version,
+            magic = magic,
+            mode = mode,
+            blockSize = blockSize,
+            backupCount = backupCount,
+            inodeCount = inodeCount,
+            dataBlockCount = dataBlockCount,
+            inodeBlockCount = inodeBlockCount,
+            superRootInode = superRootInode,
+        )
+    }
+
     fun read(raf: RandomAccessFile, offset: Long, segmentSize: Long): PfsSuperblockInfo? {
         val fileSize = try { raf.length() } catch (_: IOException) { return null }
         if (offset < 0L || segmentSize < HEADER_SIZE || fileSize < 0L ||

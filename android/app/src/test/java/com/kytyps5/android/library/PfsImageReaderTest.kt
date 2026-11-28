@@ -42,6 +42,34 @@ class PfsImageReaderTest {
     }
 
     @Test
+    fun readsTreeAndSmallFileFromVirtualRandomAccessSource() {
+        val file = buildPfs("virtual-source.pfs")
+        val bytes = file.readBytes()
+        val source = object : PfsImageSource {
+            override val length: Long = bytes.size.toLong()
+
+            override fun readAt(offset: Long, length: Int): ByteArray? {
+                if (offset < 0L || length < 0 || offset > this.length ||
+                    length.toLong() > this.length - offset
+                ) return null
+                return bytes.copyOfRange(offset.toInt(), offset.toInt() + length)
+            }
+
+            override fun close() = Unit
+        }
+
+        PfsImageReader.open(source)?.use { reader ->
+            val entries = reader.listEntries()
+            assertNotNull(entries)
+            assertEquals(listOf("sce_sys", "sce_sys/param.json"), entries!!.map { it.path })
+            assertArrayEquals(
+                """{"titleName":"Synthetic PFS"}""".toByteArray(),
+                reader.readFile("sce_sys/param.json"),
+            )
+        } ?: throw AssertionError("Expected supported mapped PFS source")
+    }
+
+    @Test
     fun readsFileUsingSingleIndirectBlockPointer() {
         val file = buildPfsWithSingleIndirect()
         PfsImageReader.open(file)?.use { reader ->
