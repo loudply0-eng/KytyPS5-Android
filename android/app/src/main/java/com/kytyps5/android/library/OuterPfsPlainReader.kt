@@ -490,3 +490,87 @@ class OuterPfsPlainReader private constructor(
                 name.none { it == '\u0000' || it == '/' || it == '\\' }
     }
 }
+
+
+/** Read-only summary surfaced by the package inspector. */
+enum class OuterPfsInspectionState {
+    NOT_SUPPORTED,
+    INVALID_OUTER_PFS,
+    NAPS_NOT_RECOGNIZED,
+    MAPPED,
+}
+
+data class OuterPfsInspectionSummary(
+    val state: OuterPfsInspectionState,
+    val fileNames: List<String> = emptyList(),
+    val packedImageSize: Long? = null,
+    val logicalImageSize: Long? = null,
+    val logicalBlockCount: Int? = null,
+    val storedBlockCount: Int = 0,
+    val krakenBlockCount: Int = 0,
+    val zeroHoleCount: Int = 0,
+    val aliasBlockCount: Int = 0,
+    val firstPayloadReadable: Boolean? = null,
+)
+
+/**
+ * Performs the potentially expensive Debug/Homebrew outer-PFS/NAPS probe off the UI thread.
+ * Retail or encrypted packages remain explicitly unsupported here.
+ */
+object OuterPfsInspector {
+    fun inspect(file: File, probe: PkgProbeResult): OuterPfsInspectionSummary {
+        if (probe.fihSignedByte != 0x00) {
+            return OuterPfsInspectionSummary(OuterPfsInspectionState.NOT_SUPPORTED)
+        }
+        val reader = try {
+            OuterPfsPlainReader.open(file, probe)
+        } catch (_: IOException) {
+            null
+        } catch (_: ArithmeticException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        } ?: return OuterPfsInspectionSummary(OuterPfsInspectionState.NOT_SUPPORTED)
+
+        return try {
+            reader.use { pfs ->
+                val files = pfs.listUrootFiles()
+                    ?: return OuterPfsInspectionSummary(OuterPfsInspectionState.INVALID_OUTER_PFS)
+                val names = files.map { it.name }.take(20)
+                val packedSize = pfs.packedImageSize
+                val map = pfs.readNapsLogicalBlockMap()
+                    ?: return OuterPfsInspectionSummary(
+                        state = OuterPfsInspectionState.NAPS_NOT_RECOGNIZED,
+                        fileNames = names,
+                        packedImageSize = packedSize,
+                    )
+                val firstPayloadReadable = if (map.blocks.isEmpty()) {
+                    false
+                } else {
+                    map.readPayload(0) { offset, length ->
+                        pfs.readPackedImageRegion(offset, length)
+                    } != null
+                }
+                val counts = map.blocks.groupingBy { it.storage }.eachCount()
+                OuterPfsInspectionSummary(
+                    state = OuterPfsInspectionState.MAPPED,
+                    fileNames = names,
+                    packedImageSize = packedSize,
+                    logicalImageSize = map.logicalSize,
+                    logicalBlockCount = map.blocks.size,
+                    storedBlockCount = counts[NapsBlockStorage.STORED] ?: 0,
+                    krakenBlockCount = counts[NapsBlockStorage.KRAKEN] ?: 0,
+                    zeroHoleCount = counts[NapsBlockStorage.ZERO_HOLE] ?: 0,
+                    aliasBlockCount = counts[NapsBlockStorage.ALIAS] ?: 0,
+                    firstPayloadReadable = firstPayloadReadable,
+                )
+            }
+        } catch (_: IOException) {
+            OuterPfsInspectionSummary(OuterPfsInspectionState.INVALID_OUTER_PFS)
+        } catch (_: ArithmeticException) {
+            OuterPfsInspectionSummary(OuterPfsInspectionState.INVALID_OUTER_PFS)
+        } catch (_: SecurityException) {
+            OuterPfsInspectionSummary(OuterPfsInspectionState.INVALID_OUTER_PFS)
+        }
+    }
+}

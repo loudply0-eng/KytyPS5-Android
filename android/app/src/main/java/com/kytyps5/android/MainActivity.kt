@@ -355,10 +355,13 @@ class MainActivity : Activity() {
         worker.execute {
             val probe = com.kytyps5.android.library.PkgProbe.probe(game.folder)
             val metadata = com.kytyps5.android.library.PkgProbe.readMetadata(game.folder)
+            val outerInspection = com.kytyps5.android.library.OuterPfsInspector.inspect(game.folder, probe)
             mainHandler.post {
                 if (!isFinishing && !isDestroyed) {
                     if (probe.kind == com.kytyps5.android.library.PkgProbeResult.Kind.PS5_FIH) {
-                        com.kytyps5.android.library.PkgInspectorDialog(this, settings).show(game, probe, metadata)
+                        com.kytyps5.android.library.PkgInspectorDialog(this, settings).show(
+                            game, probe, metadata, outerInspection
+                        )
                     } else {
                         showMessage("The PKG file changed or failed validation. Rescan the games folder.")
                     }

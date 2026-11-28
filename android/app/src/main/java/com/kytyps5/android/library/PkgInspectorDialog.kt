@@ -28,7 +28,12 @@ class PkgInspectorDialog(
     private val Int.dp: Int get() = (this * density).toInt()
     private fun tr(value: String): String = LauncherI18n.translate(value, settings.language)
 
-    fun show(game: GameEntry, probe: PkgProbeResult, metadata: PkgCntMetadata?) {
+    fun show(
+        game: GameEntry,
+        probe: PkgProbeResult,
+        metadata: PkgCntMetadata?,
+        outerInspection: OuterPfsInspectionSummary? = null,
+    ) {
         val rtl = LauncherI18n.isRtl(settings.language)
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -103,10 +108,59 @@ class PkgInspectorDialog(
             }
         }
 
+        outerInspection?.let { inspection ->
+            addSection(
+                content,
+                trInspection("Outer PFS and NAPS (read-only)", "فحص PFS الخارجي وNAPS (للقراءة فقط)"),
+            )
+            val stateText = when (inspection.state) {
+                OuterPfsInspectionState.NOT_SUPPORTED ->
+                    trInspection("Not supported: requires unencrypted Debug/Homebrew PFS", "غير مدعوم: يتطلب PFS غير مشفّر من نوع Debug أو Homebrew")
+                OuterPfsInspectionState.INVALID_OUTER_PFS ->
+                    trInspection("Outer PFS metadata could not be validated", "تعذر التحقق من بيانات PFS الخارجية")
+                OuterPfsInspectionState.NAPS_NOT_RECOGNIZED ->
+                    trInspection("Outer files are readable; NAPS layout is not supported yet", "ملفات PFS مقروءة، لكن صيغة NAPS غير مدعومة حالياً")
+                OuterPfsInspectionState.MAPPED ->
+                    trInspection("NAPS layout mapped; first payload range read", "تم بناء خريطة NAPS وقراءة نطاق أول حمولة")
+            }
+            addRow(content, trInspection("Read-only status", "حالة القراءة فقط"), stateText)
+            if (inspection.fileNames.isNotEmpty()) {
+                addRow(
+                    content,
+                    trInspection("Outer PFS files", "ملفات PFS الخارجية"),
+                    inspection.fileNames.joinToString(", "),
+                )
+            }
+            inspection.packedImageSize?.let {
+                addRow(content, trInspection("Packed image region", "منطقة صورة البيانات"), formatBytes(it))
+            }
+            inspection.logicalImageSize?.let {
+                addRow(content, trInspection("Logical image size", "الحجم المنطقي للصورة"), formatBytes(it))
+            }
+            inspection.logicalBlockCount?.let {
+                addRow(content, trInspection("Logical blocks", "عدد الكتل المنطقية"), it.toString())
+            }
+            if (inspection.state == OuterPfsInspectionState.MAPPED) {
+                addRow(content, trInspection("Stored blocks", "الكتل المخزنة"), inspection.storedBlockCount.toString())
+                addRow(content, trInspection("Kraken-compressed blocks", "كتل Kraken المضغوطة"), inspection.krakenBlockCount.toString())
+                addRow(content, trInspection("Zero holes", "الفراغات الصفرية"), inspection.zeroHoleCount.toString())
+                addRow(content, trInspection("Alias blocks", "الكتل المعاد استخدامها"), inspection.aliasBlockCount.toString())
+                addRow(
+                    content,
+                    trInspection("First payload read", "قراءة أول حمولة"),
+                    trInspection(
+                        if (inspection.firstPayloadReadable == true) "Verified" else "Not verified",
+                        if (inspection.firstPayloadReadable == true) "تم التحقق" else "لم يتم التحقق",
+                    ),
+                )
+            }
+        }
+
         addSection(content, tr("Important limitation"))
         content.addView(TextView(activity).apply {
-            text = tr(
-                "This build can inspect readable PKG metadata and covers only. It does not decrypt or launch commercial PKG files. Use an extracted game dump or a supported game image to test the emulator.",
+            text = trInspection(
+                "This build reads metadata and unencrypted Debug/Homebrew outer-PFS/NAPS ranges only. Kraken payloads remain compressed. Retail decryption, full extraction, package installation, licence processing, and direct PKG launch are not implemented.",
+                "هذه النسخة تقرأ البيانات الوصفية ونطاقات PFS/NAPS غير المشفّرة لحزم Debug/Homebrew فقط. تبقى بيانات Kraken مضغوطة. فك تشفير Retail واستخراج الملفات وتثبيت الحزم ومعالجة التراخيص والتشغيل المباشر غير منفذة.",
             )
             textSize = 13f
             setPadding(0, 4.dp, 0, 8.dp)
@@ -150,6 +204,9 @@ class PkgInspectorDialog(
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.1f))
         })
     }
+
+    private fun trInspection(english: String, arabic: String): String =
+        if (settings.language.startsWith("ar", ignoreCase = true)) arabic else tr(english)
 
     private fun hasValue(value: String?): Boolean =
         !value.isNullOrBlank() && value != "null"
