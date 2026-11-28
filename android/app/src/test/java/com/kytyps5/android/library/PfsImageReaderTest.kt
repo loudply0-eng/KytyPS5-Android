@@ -42,20 +42,24 @@ class PfsImageReaderTest {
     }
 
     @Test
-    fun readsTreeAndSmallFileFromVirtualRandomAccessSource() {
-        val file = buildPfs("virtual-source.pfs")
+    fun readsTreeAndSmallFileDirectlyFromMappedNapsImage() {
+        val file = buildPfs("virtual-naps-source.pfs")
         val bytes = file.readBytes()
-        val source = object : PfsImageSource {
-            override val length: Long = bytes.size.toLong()
-
-            override fun readAt(offset: Long, length: Int): ByteArray? {
-                if (offset < 0L || length < 0 || offset > this.length ||
-                    length.toLong() > this.length - offset
-                ) return null
-                return bytes.copyOfRange(offset.toInt(), offset.toInt() + length)
-            }
-
-            override fun close() = Unit
+        val firstLength = 0x40000
+        val blocks = listOf(
+            mappedBlock(0L, 0L, firstLength),
+            mappedBlock(firstLength.toLong(), firstLength.toLong(), bytes.size - firstLength),
+        )
+        val map = NapsLogicalBlockMap(
+            blocks = blocks,
+            logicalSize = bytes.size.toLong(),
+            pageCount = 2,
+            fileBoundaries = emptyList(),
+        )
+        val source = NapsMappedPfsImageSource(map) { offset, length ->
+            if (offset < 0L || length < 0 || offset > bytes.size.toLong() ||
+                length.toLong() > bytes.size.toLong() - offset
+            ) null else bytes.copyOfRange(offset.toInt(), offset.toInt() + length)
         }
 
         PfsImageReader.open(source)?.use { reader ->
@@ -66,8 +70,25 @@ class PfsImageReaderTest {
                 """{"titleName":"Synthetic PFS"}""".toByteArray(),
                 reader.readFile("sce_sys/param.json"),
             )
-        } ?: throw AssertionError("Expected supported mapped PFS source")
+        } ?: throw AssertionError("Expected supported mapped NAPS PFS source")
     }
+
+    private fun mappedBlock(sourceOffset: Long, logicalOffset: Long, length: Int) =
+        NapsLogicalBlock(
+            sourceOffset = sourceOffset,
+            sourceLength = length,
+            firstChunkCompressedLength = 0,
+            logicalOffset = logicalOffset,
+            logicalLength = length,
+            storage = NapsBlockStorage.STORED,
+            aliasSourceBlock = -1,
+            runRecordIndex = 0,
+            evenSelector = 1,
+            oddSelector = 0,
+            kdePredictor = 0,
+            shuffleIndex = 0,
+            codecFlags = 0,
+        )
 
     @Test
     fun readsFileUsingSingleIndirectBlockPointer() {
