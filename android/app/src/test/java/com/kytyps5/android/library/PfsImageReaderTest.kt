@@ -123,9 +123,9 @@ class PfsImageReaderTest {
         val dataBlockCount = 1037L
         val dataStartBlock = 5L
         val firstIndirectDataBlock = dataStartBlock + 12L
-        val leafOne = dataStartBlock + dataBlockCount
-        val leafTwo = leafOne + 1L
-        val root = leafTwo + 1L
+        val singleIndirect = dataStartBlock + dataBlockCount
+        val doubleIndirectLeaf = singleIndirect + 1L
+        val doubleIndirectRoot = doubleIndirectLeaf + 1L
         val totalBlocks = 1L + 1L + 1043L // superblock + inode table + data/pointer blocks
         val file = File(root, "double-indirect.pfs")
 
@@ -158,7 +158,14 @@ class PfsImageReaderTest {
             putLe64(raf, 0x40, 1L)
             putLe64(raf, 0x48, 0L)
 
-            fun writeInodeRecord(index: Int, mode: Int, size: Long, blocks: Long, direct: LongArray = LongArray(12), indirectRoot: Long = 0L) {
+            fun writeInodeRecord(
+                index: Int,
+                mode: Int,
+                size: Long,
+                blocks: Long,
+                direct: LongArray = LongArray(12),
+                indirectRoots: LongArray = LongArray(5),
+            ) {
                 val offset = blockSize + index.toLong() * INODE_SIZE
                 putLe16(raf, offset, mode)
                 putLe64(raf, offset + 8L, size)
@@ -167,7 +174,9 @@ class PfsImageReaderTest {
                 direct.forEachIndexed { slot, block ->
                     putLe32(raf, offset + 0x64L + slot * 4L, block)
                 }
-                putLe32(raf, offset + 0x94L, indirectRoot)
+                indirectRoots.forEachIndexed { slot, block ->
+                    putLe32(raf, offset + 0x94L + slot * 4L, block)
+                }
             }
 
             writeInodeRecord(0, INODE_DIR, superRootEntries.size.toLong(), 1L, longArrayOf(2L))
@@ -180,7 +189,7 @@ class PfsImageReaderTest {
                 dataBlockCount * blockSize,
                 dataBlockCount + 3L,
                 direct,
-                root,
+                longArrayOf(singleIndirect, doubleIndirectRoot),
             )
 
             raf.seek(2L * blockSize); raf.write(superRootEntries)
@@ -194,16 +203,16 @@ class PfsImageReaderTest {
                 raf.write(data)
             }
 
-            // First leaf contains 1024 data block pointers; second leaf contains the last pointer.
-            raf.seek(leafOne * blockSize)
+            // The single-indirect table addresses the first 1024 indirect data blocks.
+            raf.seek(singleIndirect * blockSize)
             repeat(1024) { slot -> writeLe32(raf, firstIndirectDataBlock + slot) }
-            raf.seek(leafTwo * blockSize)
-            writeLe32(raf, firstIndirectDataBlock + 1024L)
 
-            // Double-indirect root selects the leaf containing the requested data pointer.
-            raf.seek(root * blockSize)
-            writeLe32(raf, leafOne)
-            writeLe32(raf, leafTwo)
+            // The double-indirect root addresses the final data block through one leaf table.
+            raf.seek(doubleIndirectLeaf * blockSize)
+            writeLe32(raf, firstIndirectDataBlock + 1024L)
+            raf.seek(doubleIndirectRoot * blockSize)
+            writeLe32(raf, 0L) // slot zero is unused; logical block 1036 selects slot one.
+            writeLe32(raf, doubleIndirectLeaf)
         }
         return file
     }
