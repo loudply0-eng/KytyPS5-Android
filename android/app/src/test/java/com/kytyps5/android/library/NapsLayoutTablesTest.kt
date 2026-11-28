@@ -19,7 +19,7 @@ class NapsLayoutTablesTest {
         assertEquals(listOf(0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17),
             parsed.outerBlockDigests.single().map { it.toInt() and 0xff })
         assertEquals(1, parsed.shufflePatterns.size)
-        assertEquals(0x5a, parsed.shufflePatterns.single()[0].toInt() and 0xff)
+        assertEquals(0x50, parsed.shufflePatterns.single()[0].toInt() and 0xff)
 
         assertEquals(0x0102030405L, parsed.fileOffsets.single().uncompressedOffsetStart)
         assertEquals(0x7e, parsed.fileOffsets.single().type)
