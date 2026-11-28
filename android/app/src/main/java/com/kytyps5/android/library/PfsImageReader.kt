@@ -51,17 +51,23 @@ class PfsImageReader private constructor(
      * Directory names are matched case-insensitively only when the PFS mode requests it.
      */
     fun readFile(path: String, maxBytes: Long = DEFAULT_MAX_FILE_BYTES): ByteArray? {
-        if (path.isBlank() || path.startsWith('/') || path.contains('\\')) return null
-        val normalized = path.split('/').filter { it.isNotEmpty() }
-        if (normalized.isEmpty() || normalized.any { it == "." || it == ".." }) return null
-        val canonical = normalized.joinToString("/")
-        val entry = listEntries()?.firstOrNull {
-            !it.directory && samePath(it.path, canonical)
-        } ?: return null
-        if (entry.compressed || entry.size < 0L || entry.size > maxBytes || entry.size > Int.MAX_VALUE) return null
-        val inode = readInode(entry.inode) ?: return null
-        if ((inode.mode and INODE_MODE_FILE) == 0) return null
-        return readInodeData(inode, entry.size, maxBytes)
+        return try {
+            if (path.isBlank() || path.startsWith('/') || path.contains('\\\\')) return null
+            val normalized = path.split('/').filter { it.isNotEmpty() }
+            if (normalized.isEmpty() || normalized.any { it == "." || it == ".." }) return null
+            val canonical = normalized.joinToString("/")
+            val entry = listEntries()?.firstOrNull {
+                !it.directory && samePath(it.path, canonical)
+            } ?: return null
+            if (entry.compressed || entry.size < 0L || entry.size > maxBytes || entry.size > Int.MAX_VALUE) return null
+            val inode = readInode(entry.inode) ?: return null
+            if ((inode.mode and INODE_MODE_FILE) == 0) return null
+            readInodeData(inode, entry.size, maxBytes)
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
     }
 
     override fun close() {
