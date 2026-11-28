@@ -116,6 +116,14 @@ class OuterPfsPlainReader private constructor(
         }
     }
 
+    /** Streams a raw-only reconstructed inner image to the caller-owned output stream. */
+    fun writeUncompressedNapsImage(output: java.io.OutputStream): NapsImageBuildResult {
+        val map = readNapsLogicalBlockMap() ?: return NapsImageBuildResult.INVALID_PAYLOAD
+        return map.writeUncompressedImage(output) { offset, length ->
+            readPackedImageRegion(offset, length)
+        }
+    }
+
     /**
      * Reads a byte range from the contiguous pfs_image.dat region. The caller supplies
      * a mapped range; this method never expands/decompresses the block data.

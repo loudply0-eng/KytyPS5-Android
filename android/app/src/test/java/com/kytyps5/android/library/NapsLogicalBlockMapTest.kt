@@ -4,10 +4,92 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NapsLogicalBlockMapTest {
+    @Test
+    fun streamsStoredImageWithoutHoldingWholeImageInMemory() {
+        val map = NapsLogicalBlockMap.parse(
+            fixture(
+                logicalLengths = listOf(0x40000),
+                storage = listOf(Storage.STORED),
+                fileStarts = listOf(0L),
+            ),
+            0x40000L,
+        )!!
+        val expected = ByteArray(0x40000) { (it and 0xff).toByte() }
+        val output = ByteArrayOutputStream()
+        val result = map.writeUncompressedImage(output) { offset, length ->
+            assertEquals(0L, offset)
+            assertEquals(0x40000, length)
+            expected
+        }
+        assertEquals(NapsImageBuildResult.SUCCESS, result)
+        assertArrayEquals(expected, output.toByteArray())
+    }
+
+    @Test
+    fun streamsZeroHolesAndAliasesAsLogicalBytes() {
+        val holeMap = NapsLogicalBlockMap.parse(
+            fixture(
+                logicalLengths = listOf(0x10000),
+                storage = listOf(Storage.ZERO_HOLE),
+                fileStarts = listOf(0L),
+            ),
+            8L,
+        )!!
+        val holeOutput = ByteArrayOutputStream()
+        assertEquals(
+            NapsImageBuildResult.SUCCESS,
+            holeMap.writeUncompressedImage(holeOutput) { _, _ ->
+                throw AssertionError("Zero holes must not read packed bytes")
+            },
+        )
+        assertEquals(0x10000, holeOutput.size())
+        assertTrue(holeOutput.toByteArray().all { it == 0.toByte() })
+
+        val aliasMap = NapsLogicalBlockMap.parse(
+            fixture(
+                logicalLengths = listOf(0x10000, 0x10000),
+                storage = listOf(Storage.STORED, Storage.ALIAS),
+                fileStarts = listOf(0L, 0x10000L),
+                secondRunPage = 0,
+            ),
+            0x10000L,
+        )!!
+        val source = ByteArray(0x10000) { (it and 0xff).toByte() }
+        val aliasOutput = ByteArrayOutputStream()
+        assertEquals(
+            NapsImageBuildResult.SUCCESS,
+            aliasMap.writeUncompressedImage(aliasOutput) { offset, length ->
+                assertEquals(0L, offset)
+                assertEquals(0x10000, length)
+                source
+            },
+        )
+        assertArrayEquals(source + source, aliasOutput.toByteArray())
+    }
+
+    @Test
+    fun refusesKrakenImageBeforeWritingPartialOutput() {
+        val map = NapsLogicalBlockMap.parse(
+            fixture(
+                logicalLengths = listOf(0x10000),
+                storage = listOf(Storage.KRAKEN),
+                fileStarts = listOf(0L),
+            ),
+            0x200L,
+        )!!
+        val output = ByteArrayOutputStream()
+        val result = map.writeUncompressedImage(output) { _, _ ->
+            throw AssertionError("Kraken must be refused before reading payloads")
+        }
+        assertEquals(NapsImageBuildResult.NEEDS_KRAKEN, result)
+        assertEquals(0, output.size())
+    }
+
     @Test
     fun mapsOneStored256KiBBlockAndChecksIndexes() {
         val blob = fixture(

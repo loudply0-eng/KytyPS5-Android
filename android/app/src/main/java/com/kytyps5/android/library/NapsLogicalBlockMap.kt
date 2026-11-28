@@ -38,6 +38,12 @@ data class NapsLogicalBlock(
     val codecFlags: Int,
 )
 
+enum class NapsImageBuildResult {
+    SUCCESS,
+    NEEDS_KRAKEN,
+    INVALID_PAYLOAD,
+}
+
 data class NapsPayloadRead(
     /** Requested logical block index, including an alias when that is what was requested. */
     val logicalBlockIndex: Int,
@@ -67,6 +73,76 @@ data class NapsLogicalBlockMap(
         readRange: (offset: Long, length: Int) -> ByteArray?,
     ): NapsPayloadRead? {
         val logical = blocks.getOrNull(blockIndex) ?: return null
+        val (payloadIndex, payloadBlock) = resolvePayloadBlock(blockIndex) ?: return null
+        val bytes = when (payloadBlock.storage) {
+            NapsBlockStorage.ZERO_HOLE -> null
+            NapsBlockStorage.STORED, NapsBlockStorage.KRAKEN -> {
+                if (payloadBlock.sourceOffset < 0L || payloadBlock.sourceLength <= 0) return null
+                val data = readRange(payloadBlock.sourceOffset, payloadBlock.sourceLength) ?: return null
+                if (data.size != payloadBlock.sourceLength) return null
+                data
+            }
+            NapsBlockStorage.ALIAS -> return null
+        }
+        return NapsPayloadRead(
+            logicalBlockIndex = blockIndex,
+            logicalBlock = logical,
+            payloadBlockIndex = payloadIndex,
+            payloadBlock = payloadBlock,
+            payloadBytes = bytes,
+        )
+    }
+
+    /**
+     * Reconstructs the logical image sequentially to [output], without materializing it in memory.
+     * Stored spans, aliases, and zero holes are supported. If any logical block resolves to Kraken,
+     * NEEDS_KRAKEN is returned before writing any output bytes. The caller owns [output].
+     */
+    fun writeUncompressedImage(
+        output: java.io.OutputStream,
+        readRange: (offset: Long, length: Int) -> ByteArray?,
+    ): NapsImageBuildResult {
+        for (index in blocks.indices) {
+            val resolved = resolvePayloadBlock(index) ?: return NapsImageBuildResult.INVALID_PAYLOAD
+            if (resolved.second.storage == NapsBlockStorage.KRAKEN) {
+                return NapsImageBuildResult.NEEDS_KRAKEN
+            }
+        }
+
+        val zeroBuffer = ByteArray(16 * 1024)
+        var outputOffset = 0L
+        for (index in blocks.indices) {
+            val block = blocks[index]
+            if (block.logicalOffset != outputOffset || block.logicalLength <= 0) {
+                return NapsImageBuildResult.INVALID_PAYLOAD
+            }
+            val payload = readPayload(index, readRange) ?: return NapsImageBuildResult.INVALID_PAYLOAD
+            when (payload.payloadBlock.storage) {
+                NapsBlockStorage.STORED -> {
+                    val bytes = payload.payloadBytes ?: return NapsImageBuildResult.INVALID_PAYLOAD
+                    if (bytes.size < block.logicalLength) return NapsImageBuildResult.INVALID_PAYLOAD
+                    output.write(bytes, 0, block.logicalLength)
+                }
+                NapsBlockStorage.ZERO_HOLE -> {
+                    var remaining = block.logicalLength
+                    while (remaining > 0) {
+                        val take = minOf(remaining, zeroBuffer.size)
+                        output.write(zeroBuffer, 0, take)
+                        remaining -= take
+                    }
+                }
+                NapsBlockStorage.KRAKEN -> return NapsImageBuildResult.NEEDS_KRAKEN
+                NapsBlockStorage.ALIAS -> return NapsImageBuildResult.INVALID_PAYLOAD
+            }
+            outputOffset = Math.addExact(outputOffset, block.logicalLength.toLong())
+        }
+        return if (outputOffset == logicalSize) NapsImageBuildResult.SUCCESS
+        else NapsImageBuildResult.INVALID_PAYLOAD
+    }
+
+    private fun resolvePayloadBlock(blockIndex: Int): Pair<Int, NapsLogicalBlock>? {
+        if (blockIndex !in blocks.indices) return null
+        val logical = blocks[blockIndex]
         var payloadIndex = blockIndex
         var payloadBlock = logical
         var hops = 0
@@ -77,8 +153,10 @@ data class NapsLogicalBlockMap(
             payloadBlock = blocks.getOrNull(sourceIndex) ?: return null
             if (payloadBlock.logicalLength < logical.logicalLength) return null
         }
+        return payloadIndex to payloadBlock
+    }
 
-        val bytes = when (payloadBlock.storage) {
+    companion object {
             NapsBlockStorage.ZERO_HOLE -> null
             NapsBlockStorage.STORED, NapsBlockStorage.KRAKEN -> {
                 if (payloadBlock.sourceOffset < 0L || payloadBlock.sourceLength <= 0) return null
