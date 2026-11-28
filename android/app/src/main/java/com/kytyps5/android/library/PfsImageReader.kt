@@ -181,6 +181,8 @@ class PfsImageReader private constructor(
         val blockSize = superblock.blockSize
         val blockCount = (size + blockSize - 1L) / blockSize
         val pointersPerBlock = blockSize / 4L
+        val firstDataBlock = 1L + superblock.inodeBlockCount
+        val dataBlockLimit = firstDataBlock + superblock.dataBlockCount
         if (blockCount > DIRECT_BLOCK_COUNT + pointersPerBlock) return null
 
         val out = ByteArray(size.toInt())
@@ -191,14 +193,16 @@ class PfsImageReader private constructor(
                 inode.direct[logicalBlock.toInt()]
             } else {
                 val indirectBlock = inode.indirect[0]
-                if (indirectBlock == 0L) return null
+                if (indirectBlock < firstDataBlock || indirectBlock >= dataBlockLimit) return null
                 val pointerOffset = segmentOffset + indirectBlock * blockSize + (logicalBlock - DIRECT_BLOCK_COUNT) * 4L
                 if (!rangeFits(indirectBlock * blockSize, blockSize, segmentSize) ||
                     !rangeFits(pointerOffset - segmentOffset, 4L, segmentSize)
                 ) return null
                 readU32At(pointerOffset) ?: return null
             }
-            if (blockNumber <= 0L || blockNumber >= segmentSize / blockSize) return null
+            if (blockNumber < firstDataBlock || blockNumber >= dataBlockLimit ||
+                blockNumber >= segmentSize / blockSize
+            ) return null
             val count = minOf(blockSize.toInt(), out.size - outputOffset)
             val blockOffset = segmentOffset + blockNumber * blockSize
             if (!rangeFits(blockNumber * blockSize, count.toLong(), segmentSize)) return null
@@ -281,7 +285,12 @@ class PfsImageReader private constructor(
                     return null.also { raf.close() }
                 }
                 val inodeBytes = sb.inodeBlockCount * sb.blockSize
-                if (!rangeFits(sb.blockSize, inodeBytes, size)) return null.also { raf.close() }
+                if (!rangeFits(sb.blockSize, inodeBytes, size) ||
+                    sb.inodeBlockCount >= Long.MAX_VALUE ||
+                    sb.dataBlockCount > Long.MAX_VALUE - (1L + sb.inodeBlockCount)
+                ) return null.also { raf.close() }
+                val dataBlockLimit = 1L + sb.inodeBlockCount + sb.dataBlockCount
+                if (dataBlockLimit > size / sb.blockSize) return null.also { raf.close() }
                 return PfsImageReader(raf, offset, size, sb, inodeSlots)
             } catch (_: IOException) {
                 raf.close()
