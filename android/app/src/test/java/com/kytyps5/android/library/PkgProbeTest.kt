@@ -93,7 +93,7 @@ class PkgProbeTest {
         val file = writeFih("invalid-pfs-block-size.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L)
         RandomAccessFile(file, "rw").use { raf ->
             raf.seek(0x10000L + 0x20L)
-            raf.write(byteArrayOf(0x00, 0x80, 0x01, 0x00)) // 0x18000, not a power of two.
+            raf.write(byteArrayOf(0x00, 0x80, 0x01, 0x00).map { it.toByte() }.toByteArray()) // 0x18000, not a power of two.
         }
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }
