@@ -6,6 +6,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.util.LinkedHashMap
 
 /**
  * Read-only reader for a deliberately narrow PFS subset:
@@ -33,6 +34,11 @@ class PfsImageReader private constructor(
 
     private var scanAttempted = false
     private var scannedEntries: List<PfsImageEntry>? = null
+
+    // Indirect tables are revisited for each data block. Keep a small byte-bounded LRU
+    // so multi-megabyte files do not trigger one random source read per pointer.
+    private val indirectPointerCache = LinkedHashMap<Long, ByteArray>(16, 0.75f, true)
+    private var indirectPointerCacheBytes = 0L
 
     /**
      * Lists the tree below the super-root's `uroot` directory.
@@ -270,7 +276,7 @@ class PfsImageReader private constructor(
             } catch (_: ArithmeticException) {
                 return null
             }
-            val nextBlock = readU32At(pointerOffset) ?: return null
+            val nextBlock = readIndirectPointer(pointerBlock, slot, pointersPerBlock) ?: return null
             if (nextBlock < firstDataBlock || nextBlock >= dataBlockLimit) return null
 
             if (depth == 0) return nextBlock
@@ -279,6 +285,69 @@ class PfsImageReader private constructor(
             slotDivisor /= pointersPerBlock
         }
         return null
+    }
+
+    /**
+     * Reads one slot from an indirect pointer block. For common PFS block sizes, cache
+     * the validated pointer page so sequential file reads fetch each pointer page once.
+     * Larger page sizes fall back to a bounded four-byte read to cap cache memory.
+     */
+    private fun readIndirectPointer(
+        pointerBlock: Long,
+        slot: Long,
+        pointersPerBlock: Long,
+    ): Long? {
+        if (slot < 0L || slot >= pointersPerBlock) return null
+        val blockSize = superblock.blockSize
+        val relativeBlockOffset = try {
+            Math.multiplyExact(pointerBlock, blockSize)
+        } catch (_: ArithmeticException) {
+            return null
+        }
+        if (!rangeFits(relativeBlockOffset, blockSize, segmentSize)) return null
+
+        if (blockSize <= MAX_CACHED_POINTER_BLOCK_BYTES) {
+            val page = indirectPointerCache[pointerBlock] ?: run {
+                val absolute = try {
+                    Math.addExact(segmentOffset, relativeBlockOffset)
+                } catch (_: ArithmeticException) {
+                    return null
+                }
+                val loaded = readBytes(absolute, blockSize.toInt()) ?: return null
+                indirectPointerCache[pointerBlock] = loaded
+                indirectPointerCacheBytes += loaded.size.toLong()
+
+                val iterator = indirectPointerCache.entries.iterator()
+                while (indirectPointerCacheBytes > MAX_INDIRECT_POINTER_CACHE_BYTES && iterator.hasNext()) {
+                    val eldest = iterator.next()
+                    indirectPointerCacheBytes -= eldest.value.size.toLong()
+                    iterator.remove()
+                }
+                loaded
+            }
+            val slotOffset = try {
+                Math.multiplyExact(slot, 4L)
+            } catch (_: ArithmeticException) {
+                return null
+            }
+            if (slotOffset > page.size.toLong() - 4L) return null
+            return u32(page, slotOffset.toInt())
+        }
+
+        val slotOffset = try {
+            Math.multiplyExact(slot, 4L)
+        } catch (_: ArithmeticException) {
+            return null
+        }
+        val absolute = try {
+            Math.addExact(
+                segmentOffset,
+                Math.addExact(relativeBlockOffset, slotOffset),
+            )
+        } catch (_: ArithmeticException) {
+            return null
+        }
+        return readU32At(absolute)
     }
 
     private fun readBytes(absoluteOffset: Long, count: Int): ByteArray? {
@@ -333,6 +402,8 @@ class PfsImageReader private constructor(
         private const val MAX_DIRECTORY_BYTES = 16L * 1024L * 1024L
         private const val DEFAULT_MAX_FILE_BYTES = 32L * 1024L * 1024L
         private const val MAX_SOURCE_READ_BYTES = 1024 * 1024
+        private const val MAX_CACHED_POINTER_BLOCK_BYTES = 1024L * 1024L
+        private const val MAX_INDIRECT_POINTER_CACHE_BYTES = 4L * 1024L * 1024L
 
         fun open(file: File, offset: Long = 0L, size: Long = file.length()): PfsImageReader? {
             if (!file.isFile || offset < 0L || size < 0L) return null

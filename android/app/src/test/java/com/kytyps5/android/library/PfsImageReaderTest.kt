@@ -104,9 +104,10 @@ class PfsImageReaderTest {
     }
 
     @Test
-    fun readsFileUsingDoubleIndirectBlockPointers() {
+    fun readsFileUsingDoubleIndirectBlockPointersAndCachesPointerPages() {
         val file = buildPfsWithDoubleIndirect()
-        PfsImageReader.open(file)?.use { reader ->
+        val source = CountingPfsImageSource(file.readBytes())
+        PfsImageReader.open(source)?.use { reader ->
             val bytes = reader.readFile("sce_sys/large.bin", maxBytes = 5L * 1024L * 1024L)
             assertNotNull(bytes)
             assertEquals((1037L * 0x1000L).toInt(), bytes!!.size)
@@ -116,6 +117,18 @@ class PfsImageReaderTest {
             assertEquals(76.toByte(), bytes[(1035L * 0x1000L).toInt()])
             assertEquals(77.toByte(), bytes[(1036L * 0x1000L).toInt()])
         } ?: throw AssertionError("Expected supported PFS image")
+
+        // Three pointer pages are needed (single-, double-indirect root and leaf).
+        // Each must be fetched once, rather than issuing a 4-byte random read per file block.
+        val pageSize = 0x1000
+        val pointerBlocks = listOf(1042L, 1043L, 1044L)
+        pointerBlocks.forEach { block ->
+            assertEquals(
+                "Indirect pointer page $block should be fetched once",
+                1,
+                source.reads.count { it.first == block * pageSize && it.second == pageSize },
+            )
+        }
     }
 
     private fun buildPfsWithDoubleIndirect(): File {
@@ -360,6 +373,23 @@ class PfsImageReaderTest {
             writeBlock(raf, 18, ByteArray(BLOCK_SIZE.toInt()) { 0x5a.toByte() })
         }
         return file
+    }
+
+    private class CountingPfsImageSource(
+        private val bytes: ByteArray,
+    ) : PfsImageSource {
+        override val length: Long get() = bytes.size.toLong()
+        val reads = ArrayList<Pair<Long, Int>>()
+
+        override fun readAt(offset: Long, length: Int): ByteArray? {
+            if (offset < 0L || length < 0 || offset > bytes.size.toLong() ||
+                length.toLong() > bytes.size.toLong() - offset
+            ) return null
+            reads += offset to length
+            return bytes.copyOfRange(offset.toInt(), offset.toInt() + length)
+        }
+
+        override fun close() = Unit
     }
 
     private data class Entry(val inode: Long, val type: Int, val name: String)
