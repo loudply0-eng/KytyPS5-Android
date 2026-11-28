@@ -160,7 +160,7 @@ class OuterPfsPlainReaderTest {
 
     private fun createMappedInnerPfsFixture(): File {
         val pfsOffset = 0x10000
-        val pfsSize = 9 * BLOCK_SIZE
+        val pfsSize = (9 * BLOCK_SIZE).toInt()
         val superblockIndex = 5
         val cntOffset = pfsOffset + pfsSize
         val inner = createInnerPfsImage()
@@ -176,7 +176,7 @@ class OuterPfsPlainReaderTest {
         putLe64(bytes, 0xa0, 0x1000L)
         putMagic(bytes, cntOffset, "CNT")
 
-        val superblockOffset = pfsOffset + superblockIndex * BLOCK_SIZE
+        val superblockOffset = pfsOffset + superblockIndex * BLOCK_SIZE.toInt()
         putLe64(bytes, superblockOffset, 2L)
         putLe64(bytes, superblockOffset + 0x08, 20130315L)
         putLe16(bytes, superblockOffset + 0x1c, 0)
@@ -190,7 +190,7 @@ class OuterPfsPlainReaderTest {
         "PPRPLAIN-NOAUTH!".toByteArray(Charsets.US_ASCII)
             .copyInto(bytes, superblockOffset + 0x370)
 
-        val inodeTableOffset = pfsOffset + 6 * BLOCK_SIZE
+        val inodeTableOffset = pfsOffset + 6 * BLOCK_SIZE.toInt()
         writeInode(bytes, inodeTableOffset, 2, 0x4000, 120L, 1, 7)
         writeInode(bytes, inodeTableOffset, 3, 0x8000, napsLayout.size.toLong(), 1, 8)
         writeInodeWithBlocks(
@@ -207,8 +207,8 @@ class OuterPfsPlainReaderTest {
         check(cursor == directory.size)
 
         packedImage.copyInto(bytes, pfsOffset)
-        directory.copyInto(bytes, pfsOffset + 7 * BLOCK_SIZE)
-        napsLayout.copyInto(bytes, pfsOffset + 8 * BLOCK_SIZE)
+        directory.copyInto(bytes, pfsOffset + 7 * BLOCK_SIZE.toInt())
+        napsLayout.copyInto(bytes, pfsOffset + 8 * BLOCK_SIZE.toInt())
         return File.createTempFile("ps5-mapped-inner-", ".pkg").also { it.writeBytes(bytes) }
     }
 
