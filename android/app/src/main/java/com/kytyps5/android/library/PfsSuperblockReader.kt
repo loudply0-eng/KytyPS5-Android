@@ -34,6 +34,40 @@ data class PfsSuperblockInfo(
 
 object PfsSuperblockReader {
     private const val HEADER_SIZE = 0x50L
+    private const val OUTER_PFS_BLOCK_SIZE = 0x10000L
+    private const val SUPERBLOCK_MAGIC = 20130315L
+
+    /**
+     * Finds a valid superblock on 64 KiB boundaries inside a finalized-image PFS segment.
+     * PS5 outer PFS images can be data-first, so the superblock is not guaranteed to be
+     * at the first byte of the segment. Only the small magic field is probed per block;
+     * full geometry validation is performed only for matching candidates.
+     */
+    fun find(raf: RandomAccessFile, offset: Long, segmentSize: Long): Pair<Long, PfsSuperblockInfo>? {
+        val fileSize = try { raf.length() } catch (_: IOException) { return null }
+        if (offset < 0L || segmentSize < HEADER_SIZE || offset > fileSize ||
+            segmentSize > fileSize - offset
+        ) return null
+
+        var relative = 0L
+        while (relative <= segmentSize - HEADER_SIZE) {
+            val absolute = offset + relative
+            try {
+                raf.seek(absolute + 0x08L)
+                if (readLe64(raf) == SUPERBLOCK_MAGIC) {
+                    val info = read(raf, absolute, segmentSize - relative)
+                    if (info != null) return absolute to info
+                }
+            } catch (_: IOException) {
+                return null
+            } catch (_: SecurityException) {
+                return null
+            }
+            if (relative > Long.MAX_VALUE - OUTER_PFS_BLOCK_SIZE) return null
+            relative += OUTER_PFS_BLOCK_SIZE
+        }
+        return null
+    }
     private const val PS5_VERSION = 2L
     private const val PS5_MAGIC = 20130315L
     private const val MIN_BLOCK_SIZE = 0x1000L
