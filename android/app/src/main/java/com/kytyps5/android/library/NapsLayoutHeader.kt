@@ -54,7 +54,7 @@ data class NapsLayoutHeader(
                 val outerBlocks = (word1 and 0xFFFFFFL).toInt()
                 val cblockInfos = (((word1 ushr 24) and 0xFFFFFFL) + 2L).toInt()
 
-                if (files !in 1..MAX_FILES || uBlocks <= 0 ||
+                if (files < 1L || files > MAX_FILES.toLong() || uBlocks <= 0 ||
                     outerBlocks <= 0 || cblockInfos < 2
                 ) return null
 
