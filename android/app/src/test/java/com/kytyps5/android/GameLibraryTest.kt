@@ -282,6 +282,12 @@ class GameLibraryTest {
             bytes[0x1001c] = pfsMode.toByte()
             bytes[0x1001d] = (pfsMode ushr 8).toByte()
             putLe32(bytes, 0x10020, 0x10000L)
+            // Keep the synthetic superblock internally consistent with the reader's geometry checks.
+            putLe64(bytes, 0x10028, 2L) // total PFS blocks
+            putLe64(bytes, 0x10030, 1L) // inode count
+            putLe64(bytes, 0x10038, 1L) // data block count
+            putLe64(bytes, 0x10040, 1L) // inode block count
+            putLe64(bytes, 0x10048, 0L) // super-root inode
         }
 
         putMagic(bytes, cntOffset, "CNT")
