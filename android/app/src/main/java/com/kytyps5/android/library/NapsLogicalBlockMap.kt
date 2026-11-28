@@ -165,7 +165,7 @@ data class NapsLogicalBlockMap(
 
                 val isStored = !zeroHole &&
                     even == 1 &&
-                    odd == if (logicalLength > CHUNK_SIZE) 1 else 0 &&
+                    odd == (if (logicalLength > CHUNK_SIZE) 1 else 0) &&
                     firstChunkLength == minOf(logicalLength, CHUNK_SIZE) &&
                     compressedLength == (logicalLength.toLong() and MODULO_MASK).toInt()
 
