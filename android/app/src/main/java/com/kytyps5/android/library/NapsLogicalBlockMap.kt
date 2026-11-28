@@ -432,6 +432,7 @@ data class NapsLogicalBlockMap(
             val sourceIndices = IntArray(compactBlocks.size) { -1 }
             var shift = 0L
             var insertedHolePages = 0
+            val insertedHoleStarts = HashSet<Long>()
             for (index in stdRecords.indices) {
                 val original = compactStarts[index]
                 var logical = Math.addExact(original, shift)
@@ -447,11 +448,13 @@ data class NapsLogicalBlockMap(
                     var added = 0L
                     while (added < gap) {
                         if (restored.size >= MAX_MAPPED_BLOCKS) return null
+                        val holeStart = Math.addExact(logical, added)
+                        if (!insertedHoleStarts.add(holeStart)) return null
                         restored += NapsLogicalBlock(
                             sourceOffset = 0L,
                             sourceLength = 0,
                             firstChunkCompressedLength = 0,
-                            logicalOffset = Math.addExact(logical, added),
+                            logicalOffset = holeStart,
                             logicalLength = LOGICAL_BLOCK_SIZE.toInt(),
                             storage = NapsBlockStorage.ZERO_HOLE,
                             aliasSourceBlock = -1,
@@ -532,8 +535,12 @@ data class NapsLogicalBlockMap(
                 fileBoundaries += offset
                 previousOffset = offset
             }
+            val markerOffsets = sparseMarkers.map { it.uncompressedOffsetStart }
+            if (markerOffsets.size != markerOffsets.toSet().size ||
+                markerOffsets.toSet() != insertedHoleStarts
+            ) return null
+            if (insertedHolePages != sparseMarkers.size) return null
             if (sparseMarkers.any { it.uncompressedOffsetStart !in holeStarts }) return null
-            if (holeStarts.isEmpty() && sparseMarkers.isNotEmpty()) return null
 
             return RestoredLogicalCoverage(restored, fileBoundaries)
         }

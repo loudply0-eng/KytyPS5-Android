@@ -259,6 +259,21 @@ class NapsLogicalBlockMapTest {
     }
 
     @Test
+    fun rejectsSparseMarkerThatPointsToAnOrdinaryZeroHoleInsteadOfTheInsertedPage() {
+        val blob = fixture(
+            logicalLengths = listOf(0x10000, 0x10000, 0x10000),
+            storage = listOf(Storage.ZERO_HOLE, Storage.STORED, Storage.STORED),
+            fileStarts = listOf(0L, 0x10000L, 0x60000L),
+            sparseFileIndex = 0,
+            uBlocksOverride = 2,
+            mountEndOverride = 0x70000L,
+            u2cIndex = 1,
+            u2cPageOneDelta = 2,
+        )
+        assertNull(NapsLogicalBlockMap.parse(blob, 0x20000L))
+    }
+
+    @Test
     fun rejectsSparseFidxWhenU2cDoesNotPointToTheNextStdPage() {
         val blob = fixture(
             logicalLengths = listOf(0x10000, 0x10000),
