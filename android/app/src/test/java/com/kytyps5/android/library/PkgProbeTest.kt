@@ -47,13 +47,19 @@ class PkgProbeTest {
     }
 
     @Test
-    fun preservesRetailSignedByteAndReadsPlaintextPfsSuperblock() {
+    fun preservesRetailSignedByteWithoutParsingEncryptedOuterSuperblock() {
         val file = writeFih("retail-marker.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L, signedByte = 0x80)
+        RandomAccessFile(file, "rw").use { raf ->
+            // Retail outer PFS is encrypted as a whole, including its superblock.
+            raf.seek(0x10000L)
+            raf.write(ByteArray(0x10000) { 0xA5.toByte() })
+        }
+
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
-        assertEquals(false, result.pfsEncrypted)
-        assertNotNull(result.pfsSuperblock)
+        assertEquals(true, result.pfsEncrypted)
+        assertEquals(null, result.pfsSuperblock)
     }
 
     @Test
@@ -65,20 +71,20 @@ class PkgProbeTest {
     }
 
     @Test
-    fun recognizesRetailFihWithPlaintextSuperblockAndEncryptedDataBlocks() {
+    fun recognizesRetailFihWithWholeOuterPfsEncrypted() {
         val file = writeFih("retail-encrypted-pfs.pkg", 0x10000L, 0x20000L, 0x30000L, 0x5A0L,
-            signedByte = 0x80, pfsMode = 0x000c)
+            signedByte = 0x80)
         RandomAccessFile(file, "rw").use { raf ->
-            // Block zero remains plaintext; the following data block is ciphertext.
-            raf.seek(0x20000L)
-            raf.write(ByteArray(0x10000) { 0xA5.toByte() })
+            // The whole outer PFS segment is ciphertext, including block zero.
+            raf.seek(0x10000L)
+            raf.write(ByteArray(0x20000) { 0xA5.toByte() })
         }
 
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x80, result.fihSignedByte)
         assertEquals(0x20000L, result.pfsSize)
-        assertNotNull(result.pfsSuperblock)
+        assertEquals(null, result.pfsSuperblock)
         assertEquals(true, result.pfsEncrypted)
     }
 
@@ -87,7 +93,7 @@ class PkgProbeTest {
         val file = writeFih("invalid-pfs-block-size.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L)
         RandomAccessFile(file, "rw").use { raf ->
             raf.seek(0x10000L + 0x20L)
-            raf.write(byteArrayOf(0x00, 0x80.toByte(), 0x01, 0x00)) // 0x18000, not a power of two.
+            raf.write(byteArrayOf(0x00, 0x80, 0x01, 0x00)) // 0x18000, not a power of two.
         }
         assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
     }

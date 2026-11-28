@@ -1,9 +1,15 @@
+package com.kytyps5.android.library
+
+import java.io.File
+import java.io.IOException
+import java.io.RandomAccessFile
+
 /**
  * Conservative PS5 package probe.
  *
- * It validates FIH/CNT segment bounds and the plaintext first-block PFS superblock for
- * both Debug and Retail FIH. PFS encryption applies to data sectors after the header;
- * the FIH signed byte is a separate package marker.
+ * It validates FIH/CNT segment bounds and readable CNT metadata. Debug FIH may expose
+ * a plaintext outer-PFS superblock; Retail FIH encrypts the complete outer PFS, including
+ * its superblock, so Retail geometry is intentionally not parsed here.
  * This class never decrypts, extracts, installs, or launches package content.
  */
 data class PkgProbeResult(
@@ -14,11 +20,18 @@ data class PkgProbeResult(
     val fihSignedByte: Int? = null,
     /** Exact PFS segment byte length from the FIH header. */
     val pfsSize: Long? = null,
-    /** Readable PFS superblock metadata for Debug and Retail FIH. */
+    /** Readable outer-PFS superblock metadata; unavailable for Retail FIH ciphertext. */
     val pfsSuperblock: PfsSuperblockInfo? = null,
 ) {
-    /** PFS mode bit describes encryption of later data sectors, not the FIH signed marker. */
-    val pfsEncrypted: Boolean? get() = pfsSuperblock?.encrypted
+    /**
+     * Outer-PFS encryption state. Retail FIH (0x80) encrypts the complete outer image.
+     * For Debug FIH, use the readable PFS mode bit when its superblock is valid.
+     */
+    val pfsEncrypted: Boolean? get() = when (fihSignedByte) {
+        0x80 -> true
+        0x00 -> pfsSuperblock?.encrypted
+        else -> null
+    }
     enum class Kind {
         PS5_FIH,
         PS5_LIH,
@@ -90,10 +103,14 @@ object PkgProbe {
 
         if (fihSignedByte != 0x00 && fihSignedByte != 0x80) return malformed()
 
-        // The first PFS block (including its superblock) remains plaintext for
-        // both Debug and Retail FIH. The PFS encryption flag applies to later data
-        // sectors; validate this header, but do not decrypt or traverse any payload.
-        val pfsSuperblock = PfsSuperblockReader.read(raf, pfsOffset, pfsSize) ?: return malformed()
+        // Retail FIH encrypts the entire outer PFS, including the superblock.
+        // Do not parse ciphertext as a PFS header. Debug FIH can expose a readable
+        // superblock; validate it when present and report its mode bit without decrypting.
+        val pfsSuperblock = if (fihSignedByte == 0x00) {
+            PfsSuperblockReader.read(raf, pfsOffset, pfsSize) ?: return malformed()
+        } else {
+            null
+        }
 
         // rangeFits proves this addition cannot overflow.
         val pfsEnd = pfsOffset + pfsSize

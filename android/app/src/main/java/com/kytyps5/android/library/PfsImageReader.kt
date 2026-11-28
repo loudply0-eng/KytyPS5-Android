@@ -75,11 +75,11 @@ class PfsImageReader private constructor(
     }
 
     private fun scanTree(): List<PfsImageEntry> {
-        val superRoot = readInode(superblock.superRootInode) ?: return emptyListOrNull()
-        if ((superRoot.mode and INODE_MODE_DIR) == 0) return emptyListOrNull()
+        val superRoot = readInode(superblock.superRootInode) ?: return invalidTree()
+        if ((superRoot.mode and INODE_MODE_DIR) == 0) return invalidTree()
         val rootEntry = readDirectory(superRoot).firstOrNull {
             it.type == DIRENT_DIRECTORY && sameName(it.name, "uroot")
-        } ?: return emptyListOrNull()
+        } ?: return invalidTree()
 
         val results = ArrayList<PfsImageEntry>()
         val visited = HashSet<Long>()
@@ -87,21 +87,21 @@ class PfsImageReader private constructor(
         pending.add(PendingDirectory(rootEntry.inode, ""))
 
         while (pending.isNotEmpty()) {
-            if (results.size >= MAX_ENTRIES) return emptyListOrNull()
+            if (results.size >= MAX_ENTRIES) return invalidTree()
             val current = pending.removeFirst()
-            if (!visited.add(current.inode)) return emptyListOrNull()
-            if (current.path.count { it == '/' } >= MAX_DEPTH) return emptyListOrNull()
+            if (!visited.add(current.inode)) return invalidTree()
+            if (current.path.count { it == '/' } >= MAX_DEPTH) return invalidTree()
 
-            val inode = readInode(current.inode) ?: return emptyListOrNull()
-            if ((inode.mode and INODE_MODE_DIR) == 0 || inode.compressed) return emptyListOrNull()
+            val inode = readInode(current.inode) ?: return invalidTree()
+            if ((inode.mode and INODE_MODE_DIR) == 0 || inode.compressed) return invalidTree()
             val children = readDirectory(inode)
             for (child in children) {
                 if (child.type == DIRENT_DOT || child.type == DIRENT_DOTDOT) continue
                 val childPath = if (current.path.isEmpty()) child.name else "${current.path}/${child.name}"
-                val childInode = readInode(child.inode) ?: return emptyListOrNull()
+                val childInode = readInode(child.inode) ?: return invalidTree()
                 val isDirectory = child.type == DIRENT_DIRECTORY
-                if (isDirectory && (childInode.mode and INODE_MODE_DIR) == 0) return emptyListOrNull()
-                if (!isDirectory && (childInode.mode and INODE_MODE_FILE) == 0) return emptyListOrNull()
+                if (isDirectory && (childInode.mode and INODE_MODE_DIR) == 0) return invalidTree()
+                if (!isDirectory && (childInode.mode and INODE_MODE_FILE) == 0) return invalidTree()
 
                 results += PfsImageEntry(
                     path = childPath,
@@ -110,7 +110,7 @@ class PfsImageReader private constructor(
                     directory = isDirectory,
                     compressed = childInode.compressed,
                 )
-                if (results.size > MAX_ENTRIES) return emptyListOrNull()
+                if (results.size > MAX_ENTRIES) return invalidTree()
                 if (isDirectory) pending.add(PendingDirectory(child.inode, childPath))
             }
         }
@@ -236,7 +236,7 @@ class PfsImageReader private constructor(
     private fun samePath(a: String, b: String): Boolean =
         if (superblock.caseInsensitive) a.equals(b, ignoreCase = true) else a == b
 
-    private fun emptyListOrNull(): Nothing? = null
+    private fun invalidTree(): Nothing = throw IOException("Malformed or unsupported PFS directory tree")
 
     private data class PendingDirectory(val inode: Long, val path: String)
     private data class PfsDirent(val inode: Long, val type: Int, val name: String)
