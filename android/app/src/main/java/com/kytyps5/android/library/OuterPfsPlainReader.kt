@@ -64,7 +64,7 @@ class OuterPfsPlainReader private constructor(
             if (entry.name == "." || entry.name == "..") continue
             if (!names.add(entry.name.lowercase(java.util.Locale.ROOT))) return null
             val inode = inodes.getOrNull(entry.inodeIndex) ?: return null
-            val directory = entry.type == DIRENT_DIRECTORY
+            val directory = entry.type.toLong() == DIRENT_DIRECTORY
             val expectedMode = if (directory) MODE_DIRECTORY else MODE_FILE
             if ((inode.mode and MODE_TYPE_MASK) != expectedMode) return null
             val blocks = resolveBlocks(inode) ?: return null
