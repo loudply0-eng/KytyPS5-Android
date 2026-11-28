@@ -194,7 +194,7 @@ class GameLibraryTest {
 
 
     @Test
-    fun scanListsRetailFihWithEncryptedOuterPfsAndReadableCnt() {
+    fun scanListsRetailFihWithUnknownOuterPfsStateAndReadableCnt() {
         val pkg = makeMetadataPkg(
             "retail-encrypted.pkg",
             """{"titleName":"Retail Package","titleId":"PPSA12345"}""",
@@ -204,7 +204,7 @@ class GameLibraryTest {
 
         val probe = com.kytyps5.android.library.PkgProbe.probe(pkg)
         assertEquals(0x20000L, probe.pfsSize)
-        assertEquals(true, probe.pfsEncrypted)
+        assertEquals(null, probe.pfsEncrypted)
         assertEquals(null, probe.pfsSuperblock)
 
         val game = (GameLibrary.scan(root) as ScanResult.Found).games.single()
@@ -273,7 +273,7 @@ class GameLibraryTest {
             .copyInto(bytes, cntOffset + 0x40)
 
         if (signedByte == 0x80) {
-            // Retail encrypts the complete outer PFS, including its superblock.
+            // Opaque Retail fixture bytes. The FIH variant alone does not establish PFS mode.
             bytes.fill(0xA5.toByte(), 0x10000, (0x10000L + pfsSize).toInt())
         } else {
             // Debug fixture keeps a readable outer-PFS superblock.
