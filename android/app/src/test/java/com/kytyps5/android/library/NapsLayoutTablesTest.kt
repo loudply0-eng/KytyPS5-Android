@@ -70,6 +70,26 @@ class NapsLayoutTablesTest {
         assertNull(NapsLayoutTables.parse(fixture(padded = false).copyOf(65)))
     }
 
+
+    @Test
+    fun readsLargeCblockTableOnDemand() {
+        // A large but realistic table size must not require one allocated object per record.
+        val cblockCount = 450_700
+        val word0 = 1L shl 32 // one uncompressed block
+        val word1 = 1L or ((cblockCount - 2L) shl 24) // one outer block and CblockInfo count
+        val end = 40L + cblockCount.toLong() * 9L
+        val blob = ByteArray(end.toInt())
+        putLe64(blob, 0, word0)
+        putLe64(blob, 8, word1)
+
+        val parsed = NapsLayoutTables.parse(blob)
+        assertNotNull(parsed)
+        parsed!!
+        assertEquals(cblockCount, parsed.cblockInfos.size)
+        assertEquals(1, parsed.u2cEntries.size)
+        assertEquals(9, parsed.cblockInfos[cblockCount - 1].rawRecord.size)
+    }
+
     private fun fixture(padded: Boolean): ByteArray {
         val contentSize = 66
         val bytes = ByteArray(if (padded) 80 else contentSize)
