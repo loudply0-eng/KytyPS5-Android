@@ -38,12 +38,65 @@ data class NapsLogicalBlock(
     val codecFlags: Int,
 )
 
+data class NapsPayloadRead(
+    /** Requested logical block index, including an alias when that is what was requested. */
+    val logicalBlockIndex: Int,
+    val logicalBlock: NapsLogicalBlock,
+    /** Earlier non-alias block supplying the bytes, or the same index for non-alias blocks. */
+    val payloadBlockIndex: Int,
+    val payloadBlock: NapsLogicalBlock,
+    /** Null means an implicit all-zero hole; otherwise stored bytes or encoded Kraken bytes. */
+    val payloadBytes: ByteArray?,
+)
+
 data class NapsLogicalBlockMap(
     val blocks: List<NapsLogicalBlock>,
     val logicalSize: Long,
     val pageCount: Int,
     val fileBoundaries: List<Long>,
 ) {
+    /**
+     * Reads one mapped payload without decoding Kraken.
+     *
+     * Alias records are followed only backwards and are bounded by the map's block count.
+     * ZERO_HOLE is represented by null payload bytes so callers can synthesize zeros lazily.
+     * The callback must return exactly the requested source length.
+     */
+    fun readPayload(
+        blockIndex: Int,
+        readRange: (offset: Long, length: Int) -> ByteArray?,
+    ): NapsPayloadRead? {
+        val logical = blocks.getOrNull(blockIndex) ?: return null
+        var payloadIndex = blockIndex
+        var payloadBlock = logical
+        var hops = 0
+        while (payloadBlock.storage == NapsBlockStorage.ALIAS) {
+            val sourceIndex = payloadBlock.aliasSourceBlock
+            if (sourceIndex !in 0 until payloadIndex || ++hops > blocks.size) return null
+            payloadIndex = sourceIndex
+            payloadBlock = blocks.getOrNull(sourceIndex) ?: return null
+            if (payloadBlock.logicalLength < logical.logicalLength) return null
+        }
+
+        val bytes = when (payloadBlock.storage) {
+            NapsBlockStorage.ZERO_HOLE -> null
+            NapsBlockStorage.STORED, NapsBlockStorage.KRAKEN -> {
+                if (payloadBlock.sourceOffset < 0L || payloadBlock.sourceLength <= 0) return null
+                val data = readRange(payloadBlock.sourceOffset, payloadBlock.sourceLength) ?: return null
+                if (data.size != payloadBlock.sourceLength) return null
+                data
+            }
+            NapsBlockStorage.ALIAS -> return null
+        }
+        return NapsPayloadRead(
+            logicalBlockIndex = blockIndex,
+            logicalBlock = logical,
+            payloadBlockIndex = payloadIndex,
+            payloadBlock = payloadBlock,
+            payloadBytes = bytes,
+        )
+    }
+
     companion object {
         private const val LOGICAL_BLOCK_SIZE = 0x40000L
         private const val CHUNK_SIZE = 0x20000

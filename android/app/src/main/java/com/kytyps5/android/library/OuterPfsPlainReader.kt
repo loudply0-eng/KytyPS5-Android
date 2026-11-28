@@ -105,6 +105,18 @@ class OuterPfsPlainReader private constructor(
     }
 
     /**
+     * Reads a logical NAPS block's stored/encoded payload from pfs_image.dat.
+     * Kraken data is returned encoded; zero holes are represented without allocating
+     * a full logical block; aliases resolve to their earlier physical payload block.
+     */
+    fun readNapsBlockPayload(blockIndex: Int): NapsPayloadRead? {
+        val map = readNapsLogicalBlockMap() ?: return null
+        return map.readPayload(blockIndex) { offset, length ->
+            readPackedImageRegion(offset, length)
+        }
+    }
+
+    /**
      * Reads a byte range from the contiguous pfs_image.dat region. The caller supplies
      * a mapped range; this method never expands/decompresses the block data.
      */

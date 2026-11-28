@@ -1,6 +1,6 @@
 package com.kytyps5.android.library
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals\nimport org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -41,6 +41,17 @@ class NapsLogicalBlockMapTest {
         assertEquals(0x100, block.firstChunkCompressedLength)
         assertEquals(0x10000, block.logicalLength)
         assertEquals(0x02, block.codecFlags)
+
+        val expected = ByteArray(0x200) { (it and 0xff).toByte() }
+        val payload = map.readPayload(0) { offset, length ->
+            assertEquals(0L, offset)
+            assertEquals(0x200, length)
+            expected
+        }
+        assertNotNull(payload)
+        payload!!
+        assertEquals(NapsBlockStorage.KRAKEN, payload.payloadBlock.storage)
+        assertArrayEquals(expected, payload.payloadBytes)
     }
 
     @Test
@@ -55,6 +66,11 @@ class NapsLogicalBlockMapTest {
         map!!
         assertEquals(NapsBlockStorage.ZERO_HOLE, map.blocks.single().storage)
         assertEquals(8, map.blocks.single().sourceLength)
+        val payload = map.readPayload(0) { _, _ -> throw AssertionError("Zero hole must not read source bytes") }
+        assertNotNull(payload)
+        payload!!
+        assertNull(payload.payloadBytes)
+        assertEquals(NapsBlockStorage.ZERO_HOLE, payload.payloadBlock.storage)
     }
 
     @Test
@@ -72,6 +88,19 @@ class NapsLogicalBlockMapTest {
         assertEquals(NapsBlockStorage.ALIAS, map.blocks[1].storage)
         assertEquals(0, map.blocks[1].aliasSourceBlock)
         assertEquals(0L, map.blocks[1].sourceOffset)
+        val payloadBytes = ByteArray(0x10000) { (it and 0xff).toByte() }
+        val payload = map.readPayload(1) { offset, length ->
+            assertEquals(0L, offset)
+            assertEquals(0x10000, length)
+            payloadBytes
+        }
+        assertNotNull(payload)
+        payload!!
+        assertEquals(1, payload.logicalBlockIndex)
+        assertEquals(0, payload.payloadBlockIndex)
+        assertEquals(NapsBlockStorage.ALIAS, payload.logicalBlock.storage)
+        assertEquals(NapsBlockStorage.STORED, payload.payloadBlock.storage)
+        assertArrayEquals(payloadBytes, payload.payloadBytes)
     }
 
     @Test
