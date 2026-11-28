@@ -81,22 +81,19 @@ data class NapsLayoutTables(
                 val cblockPaddingSize = sections.cblockInfoOffset - u2cEnd
                 if (cblockPaddingSize !in 0L..7L) return null
 
-                val outer = copyEntries(blob, sections.outerDigestsOffset,
-                    counts.outerBlockCount, OUTER_DIGEST_STRIDE) ?: return null
-                val shuffle = copyEntries(blob, sections.shufflePatternsOffset,
-                    counts.shufflePatternCount, SHUFFLE_PATTERN_STRIDE) ?: return null
-
-                val fidxRaw = copyEntries(blob, sections.fileOffsetsOffset,
-                    counts.fileCount, FIDX_STRIDE) ?: return null
-                val fidx = fidxRaw.map(::decodeFileOffsetEntry)
-
-                val u2cRaw = copyEntries(blob, sections.u2cOffsetsOffset,
-                    sections.u2cEntryCount, U2C_STRIDE) ?: return null
-                val u2c = u2cRaw.map(::decodeU2cEntry)
-
-                val cblockRaw = copyEntries(blob, sections.cblockInfoOffset,
-                    counts.cblockInfoCount, CBLOCK_INFO_STRIDE) ?: return null
-                val cblocks = cblockRaw.map(::decodeCblockInfoEntry)
+                // Keep the tables as bounded, lazy views over the supplied blob. Real package
+                // layouts can contain hundreds of thousands of CblockInfo rows; eagerly creating
+                // a ByteArray and Kotlin object for every row would multiply memory consumption.
+                val outer = table(blob, sections.outerDigestsOffset,
+                    counts.outerBlockCount, OUTER_DIGEST_STRIDE) { it } ?: return null
+                val shuffle = table(blob, sections.shufflePatternsOffset,
+                    counts.shufflePatternCount, SHUFFLE_PATTERN_STRIDE) { it } ?: return null
+                val fidx = table(blob, sections.fileOffsetsOffset,
+                    counts.fileCount, FIDX_STRIDE, ::decodeFileOffsetEntry) ?: return null
+                val u2c = table(blob, sections.u2cOffsetsOffset,
+                    sections.u2cEntryCount, U2C_STRIDE, ::decodeU2cEntry) ?: return null
+                val cblocks = table(blob, sections.cblockInfoOffset,
+                    counts.cblockInfoCount, CBLOCK_INFO_STRIDE, ::decodeCblockInfoEntry) ?: return null
 
                 val paddingStart = u2cEnd.toInt()
                 val paddingEnd = sections.cblockInfoOffset.toInt()
@@ -122,20 +119,31 @@ data class NapsLayoutTables(
             }
         }
 
-        private fun copyEntries(
+        private class FixedWidthTable<T>(
+            private val blob: ByteArray,
+            private val offset: Int,
+            override val size: Int,
+            private val stride: Int,
+            private val decode: (ByteArray) -> T,
+        ) : AbstractList<T>() {
+            override fun get(index: Int): T {
+                if (index < 0 || index >= size) throw IndexOutOfBoundsException("NAPS table index $index")
+                val start = offset + index * stride
+                return decode(blob.copyOfRange(start, start + stride))
+            }
+        }
+
+        private fun <T> table(
             blob: ByteArray,
             offset: Long,
             count: Int,
             stride: Int,
-        ): List<ByteArray>? {
+            decode: (ByteArray) -> T,
+        ): List<T>? {
             if (offset < 0L || count < 0 || stride <= 0) return null
             val byteCount = Math.multiplyExact(count.toLong(), stride.toLong())
             if (!rangeFits(offset, byteCount, blob.size.toLong()) || byteCount > Int.MAX_VALUE) return null
-            val start = offset.toInt()
-            return List(count) { index ->
-                val entryStart = start + index * stride
-                blob.copyOfRange(entryStart, entryStart + stride)
-            }
+            return FixedWidthTable(blob, offset.toInt(), count, stride, decode)
         }
 
         private fun decodeFileOffsetEntry(entry: ByteArray): NapsFileOffsetEntry {
@@ -166,7 +174,7 @@ data class NapsLayoutTables(
             val isRunBase = ((low ushr 18) and 1L) != 0L
             val reservedBit19 = ((low ushr 19) and 1L) != 0L
             val low18 = (low and 0x3ffffL).toInt()
-            val raw = entry.copyOf(CBLOCK_INFO_STRIDE)
+            val raw = entry
 
             return if (!isRunBase) {
                 val kdePredictor = (((high and 0x07) shl 3) or
