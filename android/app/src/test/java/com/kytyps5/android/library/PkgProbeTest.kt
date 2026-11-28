@@ -300,6 +300,21 @@ class PkgProbeTest {
         ))
     }
 
+    private fun putLe16(raf: RandomAccessFile, offset: Long, value: Int) {
+        raf.seek(offset)
+        raf.write(byteArrayOf(value.toByte(), (value ushr 8).toByte()))
+    }
+
+    private fun putLe32(raf: RandomAccessFile, offset: Long, value: Long) {
+        raf.seek(offset)
+        raf.write(ByteArray(4) { index -> (value ushr (index * 8)).toByte() })
+    }
+
+    private fun putLe64(raf: RandomAccessFile, offset: Long, value: Long) {
+        raf.seek(offset)
+        raf.write(ByteArray(8) { index -> (value ushr (index * 8)).toByte() })
+    }
+
     private fun putLe16(bytes: ByteArray, offset: Int, value: Int) {
         bytes[offset] = value.toByte()
         bytes[offset + 1] = (value ushr 8).toByte()
