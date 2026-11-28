@@ -1,7 +1,9 @@
 package com.kytyps5.android
 
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
+import java.util.Base64
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -94,7 +96,27 @@ class GameLibraryTest {
     fun imageLabelNamesEachImageFormat() {
         assertEquals("ZArchive", GameLibrary.imageLabel(File("a.zar")))
         assertEquals("exFAT image", GameLibrary.imageLabel(File("a.EXFAT")))
-        assertEquals("", GameLibrary.imageLabel(File("a.img")))
+        assertEquals("exFAT disk image", GameLibrary.imageLabel(File("a.img")))
+    }
+
+    @Test
+    fun scanFindsSfoOnlyGameFoldersAndCaseInsensitiveCoverFiles() {
+        val gameDir = File(root, "Vampire Survivors")
+        val sceSys = File(gameDir, "SCE_SYS").apply { mkdirs() }
+        File(sceSys, "PARAM.SFO").writeBytes(
+            com.kytyps5.android.library.SfoFixture.build(
+                "TITLE" to "Vampire Survivors",
+                "TITLE_ID" to "PPSA00000",
+            ),
+        )
+        val icon = File(sceSys, "ICON0.PNG").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertEquals(1, result.games.size)
+        assertEquals("Vampire Survivors", result.games.single().title)
+        assertEquals("PPSA00000", result.games.single().titleId)
+        assertEquals(icon, result.games.single().icon)
+        assertTrue(result.games.single().launchable)
     }
 
     @Test
@@ -154,6 +176,175 @@ class GameLibraryTest {
         assertEquals("From SFO", game.title)
         assertEquals("CUSA00001", game.titleId)
         assertEquals(null, game.icon)
+    }
+
+
+    @Test
+    fun scanListsValidatedPkgAsMetadataOnlyEntry() {
+        val pkg = makeMetadataPkg("ASTRO.pkg", """{"titleName":"ASTRO BOT","titleId":"PPSA21567"}""")
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertEquals(listOf("ASTRO BOT"), result.games.map { it.title })
+        assertEquals(pkg.absolutePath, result.games.single().path)
+        assertEquals("PPSA21567", result.games.single().titleId)
+        assertTrue(!result.games.single().launchable)
+        assertEquals("PKG metadata • not installable", result.games.single().status)
+    }
+
+
+
+    @Test
+    fun scanListsRetailFihWithUnknownOuterPfsStateAndReadableCnt() {
+        val pkg = makeMetadataPkg(
+            "retail-encrypted.pkg",
+            """{"titleName":"Retail Package","titleId":"PPSA12345"}""",
+            signedByte = 0x80,
+            pfsSize = 0x20000L,
+        )
+
+        val probe = com.kytyps5.android.library.PkgProbe.probe(pkg)
+        assertEquals(0x20000L, probe.pfsSize)
+        assertEquals(null, probe.pfsEncrypted)
+        assertEquals(null, probe.pfsSuperblock)
+
+        val game = (GameLibrary.scan(root) as ScanResult.Found).games.single()
+        assertEquals("Retail Package", game.title)
+        assertEquals("PPSA12345", game.titleId)
+        assertEquals("UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP", game.contentId)
+        assertEquals(pkg.absolutePath, game.path)
+        assertTrue(!game.launchable)
+        assertEquals("PKG metadata • not installable", game.status)
+    }
+
+    @Test
+    fun scanReadsMasterDataIdAndCachesUnencryptedPkgCover() {
+        makeMetadataPkg(
+            "vampire.pkg",
+            """{"localizedParameters":{"defaultLanguage":"en-US","en-US":{"titleName":"Vampire Survivors"}},"masterDataId":"PPSA00000"}""",
+        )
+        val cache = File(root, "app-cache/pkg-icons")
+        val game = (GameLibrary.scan(root, cache) as ScanResult.Found).games.single()
+
+        assertEquals("Vampire Survivors", game.title)
+        assertEquals("PPSA00000", game.titleId)
+        assertTrue(!game.launchable)
+        assertTrue(game.icon?.isFile == true)
+        assertTrue(game.icon!!.readBytes().contentEquals(onePixelPng()))
+    }
+
+    @Test
+    fun scanIgnoresArbitraryFilesNamedPkg() {
+        File(root, "not-a-package.pkg").writeBytes(ByteArray(256) { 0x41 })
+        File(root, "another.pkg").writeText("not a PS5 package")
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertTrue(result.games.isEmpty())
+    }
+
+    @Test
+    fun scanIgnoresFihWhenCntSegmentIsMalformed() {
+        val pkg = makeMetadataPkg("broken-cnt.pkg", """{"titleName":"Must Not Appear"}""")
+        RandomAccessFile(pkg, "rw").use { raf ->
+            raf.seek(0x20000L)
+            raf.write(byteArrayOf(0x7f, 0x42, 0x41, 0x44))
+        }
+
+        val result = GameLibrary.scan(root) as ScanResult.Found
+        assertTrue(result.games.isEmpty())
+    }
+
+    private fun makeMetadataPkg(
+        name: String,
+        paramJson: String,
+        signedByte: Int = 0x00,
+        pfsSize: Long = 0x10000L,
+        pfsMode: Int = 0x0008,
+    ): File {
+        val cntOffset = (0x10000L + pfsSize).toInt()
+        val cntSize = 0x1000
+        val bytes = ByteArray(cntOffset + cntSize)
+        putMagic(bytes, 0, "FIH")
+        bytes[0x05] = signedByte.toByte()
+        putLe64(bytes, 0x10, 0x10000L)
+        putLe64(bytes, 0x18, pfsSize)
+        putLe64(bytes, 0x58, cntOffset.toLong())
+        putLe64(bytes, 0xa0, cntSize.toLong())
+        "UP0001-PPSA00001_00-ABCDEFGHIJKLMNOP".toByteArray(Charsets.US_ASCII)
+            .copyInto(bytes, cntOffset + 0x40)
+
+        if (signedByte == 0x80) {
+            // Opaque Retail fixture bytes. The FIH variant alone does not establish PFS mode.
+            bytes.fill(0xA5.toByte(), 0x10000, (0x10000L + pfsSize).toInt())
+        } else {
+            // Debug fixture keeps a readable outer-PFS superblock.
+            putLe64(bytes, 0x10000, 2L)
+            putLe64(bytes, 0x10008, 20130315L)
+            bytes[0x1001c] = pfsMode.toByte()
+            bytes[0x1001d] = (pfsMode ushr 8).toByte()
+            putLe32(bytes, 0x10020, 0x10000L)
+            // Keep the synthetic superblock internally consistent with the reader's geometry checks.
+            putLe64(bytes, 0x10028, 2L) // total PFS blocks
+            putLe64(bytes, 0x10030, 1L) // inode count
+            putLe64(bytes, 0x10038, 1L) // data block count
+            putLe64(bytes, 0x10040, 1L) // inode block count
+            putLe64(bytes, 0x10048, 0L) // super-root inode
+        }
+
+        putMagic(bytes, cntOffset, "CNT")
+        putBe32(bytes, cntOffset + 0x10, 3L)
+        putBe32(bytes, cntOffset + 0x18, 0x5a0L)
+
+        // Entry 0: the names table. Both metadata paths are present.
+        val names = byteArrayOf(0) +
+            "sce_sys/param.json".toByteArray(Charsets.UTF_8) + byteArrayOf(0) +
+            "sce_sys/icon0.png".toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+        putBe32(bytes, cntOffset + 0x5a0, 0x0200L)
+        putBe32(bytes, cntOffset + 0x5a0 + 0x10, 0x700L)
+        putBe32(bytes, cntOffset + 0x5a0 + 0x14, names.size.toLong())
+
+        // Entry 1: plaintext param.json.
+        val json = paramJson.toByteArray(Charsets.UTF_8)
+        putBe32(bytes, cntOffset + 0x5c0, 0x2000L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x04, 1L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x10, 0x740L)
+        putBe32(bytes, cntOffset + 0x5c0 + 0x14, json.size.toLong())
+
+        // Entry 2: unencrypted icon0.png presentation metadata.
+        val icon = onePixelPng()
+        val iconOffset = 0x740 + json.size + 0x10
+        putBe32(bytes, cntOffset + 0x5e0, 0x1200L)
+        putBe32(bytes, cntOffset + 0x5e0 + 0x04, 20L)
+        putBe32(bytes, cntOffset + 0x5e0 + 0x10, iconOffset.toLong())
+        putBe32(bytes, cntOffset + 0x5e0 + 0x14, icon.size.toLong())
+
+        names.copyInto(bytes, cntOffset + 0x700)
+        json.copyInto(bytes, cntOffset + 0x740)
+        icon.copyInto(bytes, cntOffset + iconOffset)
+
+        return File(root, name).apply { writeBytes(bytes) }
+    }
+
+    private fun onePixelPng(): ByteArray =
+        Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==")
+
+    private fun putMagic(bytes: ByteArray, offset: Int, magic: String) {
+        bytes[offset] = 0x7f
+        magic.forEachIndexed { index, char -> bytes[offset + index + 1] = char.code.toByte() }
+    }
+
+    private fun putLe64(bytes: ByteArray, offset: Int, value: Long) {
+        repeat(8) { index -> bytes[offset + index] = (value ushr (index * 8)).toByte() }
+    }
+
+    private fun putLe32(bytes: ByteArray, offset: Int, value: Long) {
+        repeat(4) { index -> bytes[offset + index] = (value ushr (index * 8)).toByte() }
+    }
+
+    private fun putBe32(bytes: ByteArray, offset: Int, value: Long) {
+        bytes[offset] = (value ushr 24).toByte()
+        bytes[offset + 1] = (value ushr 16).toByte()
+        bytes[offset + 2] = (value ushr 8).toByte()
+        bytes[offset + 3] = value.toByte()
     }
 
     private fun makeGame(folderName: String, paramJson: String?) {

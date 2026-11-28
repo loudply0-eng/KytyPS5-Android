@@ -3,6 +3,7 @@ package com.kytyps5.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -38,42 +39,84 @@ internal class InAppUpdater(
         ?.takeIf { it == UPDATE_APK_FILE }
         ?.let { File(File(activity.cacheDir, UPDATE_DIRECTORY), it).takeIf(File::isFile) }
 
+    private fun ui(english: String, arabic: String): String {
+        val language = LauncherSettings(activity).language
+        return when {
+            english.startsWith("Update available — ") ->
+                LauncherI18n.translate("Update available: ", language) + english.removePrefix("Update available — ")
+            else -> LauncherI18n.translate(english, language)
+        }
+    }
+
+    private fun localizeStatus(value: String): String {
+        val language = LauncherSettings(activity).language
+        return when {
+            value.startsWith("Installed version: ") ->
+                LauncherI18n.translate("Installed version: ", language) + value.removePrefix("Installed version: ")
+            value.startsWith("Update available: ") ->
+                LauncherI18n.translate("Update available: ", language) + value.removePrefix("Update available: ")
+            value.startsWith("You are using the latest version (") ->
+                LauncherI18n.translate("You are using the latest version", language) +
+                    value.substringAfter("You are using the latest version")
+            else -> LauncherI18n.translate(value, language)
+        }
+    }
+
     fun buildPanel(): View {
+        val language = LauncherSettings(activity).language
         val panel = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
+            layoutDirection = if (LauncherI18n.isRtl(language)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             setPadding(0, 20, 0, 12)
         }
         panel.addView(TextView(activity).apply {
-            text = "APP UPDATES"
+            text = ui("APP UPDATES", "تحديثات التطبيق")
             textSize = 17f
+            setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         status = TextView(activity).apply {
-            text = "Installed version: ${installedVersionName()}"
+            text = localizeStatus("Installed version: ${installedVersionName()}")
             textSize = 13f
+            setTextColor(Color.WHITE)
             setPadding(0, 8, 0, 8)
         }
         panel.addView(status)
         progress = ProgressBar(activity).apply {
             visibility = View.GONE
             isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(LauncherSettings(activity).accentColor)
         }
         panel.addView(progress)
         updateButton = Button(activity).apply {
-            text = "Check for updates"
+            text = ui("Check for updates", "التحقق من التحديثات")
+            setTextColor(Color.WHITE)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(LauncherSettings(activity).accentColor)
             setOnClickListener { checkForUpdates() }
         }
         panel.addView(updateButton)
         panel.addView(TextView(activity).apply {
-            text = "Stable updates are checked from the official project releases. Downloads are verified before Android's installer opens; Android requires your approval to install."
+            text = ui("Stable updates are checked from the official project releases. Downloads are verified before the Android installer opens; your approval is required to install.", "يتم التحقق من التحديثات المستقرة عبر الإصدارات الرسمية للمشروع. يُفحص الملف قبل فتح مُثبّت أندرويد، وتبقى موافقتك مطلوبة لإكمال التثبيت.")
             textSize = 12f
+            setTextColor(Color.LTGRAY)
             alpha = 0.75f
             setPadding(0, 6, 0, 0)
         })
         return panel
     }
 
-    fun checkOnLaunch() = checkForUpdates()
+    fun checkOnLaunch() {
+        val preferences = LauncherSettings(activity)
+        if (!preferences.autoUpdatesEnabled) return
+        val now = System.currentTimeMillis()
+        if (!UpdatePolicy.shouldRunAutomaticCheck(
+                preferences.lastAutoUpdateSuccessAtMillis,
+                preferences.lastAutoUpdateAttemptAtMillis,
+                now,
+            )
+        ) return
+        checkForUpdates(automatic = true)
+    }
 
     fun onSaveInstanceState(outState: Bundle) {
         pendingInstallFile?.takeIf(File::isFile)?.let {
@@ -89,7 +132,10 @@ internal class InAppUpdater(
         }
     }
 
-    private fun checkForUpdates() {
+    private fun checkForUpdates(automatic: Boolean = false) {
+        if (automatic) {
+            LauncherSettings(activity).lastAutoUpdateAttemptAtMillis = System.currentTimeMillis()
+        }
         setBusy(true, "Checking the latest stable release…")
         thread {
             try {
@@ -103,6 +149,10 @@ internal class InAppUpdater(
                 val currentVersion = UpdatePolicy.parseVersion(installedVersionName())
                     ?: throw IllegalStateException("Installed app version is invalid.")
                 if (UpdatePolicy.compareVersions(latestVersion, currentVersion) <= 0) {
+                    // Only automatic checks update the automatic-check success schedule.
+                    if (automatic) {
+                        LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
+                    }
                     activity.runOnUiThread {
                         setBusy(false, "You are using the latest version (${installedVersionName()}).")
                     }
@@ -120,36 +170,55 @@ internal class InAppUpdater(
                 val asset = apkAssets.single()
                 val digest = asset.optString("digest")
                 if (!digest.matches(Regex("^sha256:[0-9a-fA-F]{64}$"))) {
-                    throw IllegalStateException("Release APK has no valid GitHub SHA-256 digest. Update blocked.")
+                    throw IllegalStateException("Release APK has no valid SHA-256 digest. Update blocked.")
                 }
                 val downloadUrl = asset.optString("browser_download_url")
                 if (UpdatePolicy.trustedDownloadUrl(downloadUrl)?.host != "github.com") {
-                    throw SecurityException("APK URL is not an approved HTTPS GitHub release URL.")
+                    throw SecurityException("APK URL is not an approved secure release URL.")
                 }
                 val notes = release.optString("body").take(2500)
+                if (automatic) {
+                    // Auto-checks download verified updates without an extra in-app confirmation.
+                    // Android's package installer still requires the user's final approval.
+                    activity.runOnUiThread {
+                        downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"), tag, automatic = true)
+                    }
+                    return@thread
+                }
                 activity.runOnUiThread {
                     setBusy(false, "Update available: $tag")
                     AlertDialog.Builder(activity)
-                        .setTitle("Update available — $tag")
+                        .setTitle(ui("Update available — $tag", "يتوفر تحديث — $tag"))
                         .setMessage(
-                            "Current version: ${installedVersionName()}\nNew version: $tag\n\n$notes\n\n" +
-                                "The APK will be downloaded and checked before Android's installer opens."
+                            LauncherI18n.translate("Current version: ", LauncherSettings(activity).language) +
+                                installedVersionName() + "\n" +
+                                LauncherI18n.translate("New version: ", LauncherSettings(activity).language) +
+                                tag + "\n\n" + notes + "\n\n" +
+                                LauncherI18n.translate(
+                                    "The APK will be downloaded and checked before the Android installer opens.",
+                                    LauncherSettings(activity).language,
+                                )
                         )
-                        .setNegativeButton("Later", null)
-                        .setPositiveButton("Download and install") { _, _ ->
-                            downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"))
+                        .setNegativeButton(ui("Later", "لاحقاً"), null)
+                        .setPositiveButton(ui("Download and install", "تنزيل وتثبيت")) { _, _ ->
+                            downloadAndInstall(downloadUrl, digest.removePrefix("sha256:"), tag)
                         }
                         .show()
                 }
             } catch (error: Exception) {
                 activity.runOnUiThread {
-                    setBusy(false, "Update check failed: ${error.message ?: "network error"}")
+                    setBusy(false, UpdateErrorMessages.CHECK_FAILED)
                 }
             }
         }
     }
 
-    private fun downloadAndInstall(downloadUrl: String, expectedSha256: String) {
+    private fun downloadAndInstall(
+        downloadUrl: String,
+        expectedSha256: String,
+        expectedVersionName: String,
+        automatic: Boolean = false,
+    ) {
         setBusy(true, "Downloading update…")
         thread {
             var temp: File? = null
@@ -192,12 +261,36 @@ internal class InAppUpdater(
                     throw SecurityException("APK SHA-256 mismatch. The downloaded update was rejected.")
                 }
 
+                // Verify the APK's embedded Android package metadata before handing it to the installer.
+                // The installer independently enforces the signing-certificate continuity.
+                val archiveInfo = activity.packageManager.getPackageArchiveInfo(temp.absolutePath, 0)
+                    ?: throw SecurityException("Downloaded file is not a readable Android APK.")
+                if (archiveInfo.packageName != activity.packageName) {
+                    throw SecurityException("APK package identity does not match this application.")
+                }
+                val archiveVersion = UpdatePolicy.parseVersion(archiveInfo.versionName.orEmpty())
+                    ?: throw SecurityException("APK version name is invalid.")
+                val releaseVersion = UpdatePolicy.parseVersion(expectedVersionName)
+                    ?: throw SecurityException("Release version is invalid.")
+                if (UpdatePolicy.compareVersions(archiveVersion, releaseVersion) != 0) {
+                    throw SecurityException("APK version does not match the published release tag.")
+                }
+                val installedInfo = activity.packageManager.getPackageInfo(activity.packageName, 0)
+                if (archiveInfo.longVersionCode <= installedInfo.longVersionCode) {
+                    throw SecurityException("APK version code is not newer than the installed application.")
+                }
+
                 val apkFile = File(updateDirectory, UPDATE_APK_FILE)
                 if (apkFile.exists() && !apkFile.delete()) {
                     throw IllegalStateException("Cannot replace cached update.")
                 }
                 if (!temp.renameTo(apkFile)) throw IllegalStateException("Cannot finalize downloaded APK.")
                 temp = null
+                // A verified automatic download is a successful check. Do not repeatedly
+                // reopen the installer every 30 minutes if the user chooses not to install yet.
+                if (automatic) {
+                    LauncherSettings(activity).lastAutoUpdateSuccessAtMillis = System.currentTimeMillis()
+                }
 
                 activity.runOnUiThread {
                     setBusy(false, "Download verified. Preparing Android installer…")
@@ -206,12 +299,11 @@ internal class InAppUpdater(
                     ) {
                         pendingInstallFile = apkFile
                         AlertDialog.Builder(activity)
-                            .setTitle("Allow app updates")
+                            .setTitle(ui("Allow app updates", "السماح بتحديث التطبيق"))
                             .setMessage(
-                                "Android needs permission to install updates initiated by this app. " +
-                                    "Enable it on the next screen, then return here."
+                                ui("Android needs permission to install updates initiated by this app. Enable it on the next screen, then return here.", "يحتاج أندرويد إلى إذن لتثبيت التحديثات التي يبدأها هذا التطبيق. فعّل الإذن في الشاشة التالية ثم ارجع إلى هنا.")
                             )
-                            .setPositiveButton("Open settings") { _, _ ->
+                            .setPositiveButton(ui("Open settings", "فتح الإعدادات")) { _, _ ->
                                 activity.startActivity(
                                     Intent(
                                         Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -219,7 +311,12 @@ internal class InAppUpdater(
                                     )
                                 )
                             }
-                            .setNegativeButton("Cancel", null)
+                            .setNegativeButton(ui("Cancel", "إلغاء")) { _, _ ->
+                                pendingInstallFile = null
+                            }
+                            .setOnCancelListener {
+                                pendingInstallFile = null
+                            }
                             .show()
                     } else {
                         openSystemInstaller(apkFile)
@@ -228,7 +325,7 @@ internal class InAppUpdater(
             } catch (error: Exception) {
                 temp?.delete()
                 activity.runOnUiThread {
-                    setBusy(false, "Update download rejected: ${error.message ?: "unknown error"}")
+                    setBusy(false, UpdateErrorMessages.DOWNLOAD_FAILED)
                 }
             } finally {
                 connection?.disconnect()
@@ -238,7 +335,7 @@ internal class InAppUpdater(
 
     private fun openVerifiedDownloadConnection(address: String): HttpURLConnection {
         var current = UpdatePolicy.trustedDownloadUrl(address)
-            ?: throw SecurityException("APK URL is not on the HTTPS GitHub allowlist.")
+            ?: throw SecurityException("APK URL is not on the trusted secure-download list.")
         repeat(MAX_REDIRECTS + 1) { hop ->
             val connection = (current.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -261,7 +358,7 @@ internal class InAppUpdater(
                     throw SecurityException("APK download exceeded the redirect limit or omitted Location.")
                 }
                 current = UpdatePolicy.resolveTrustedRedirect(current, location)
-                    ?: throw SecurityException("APK redirect is not on the HTTPS GitHub allowlist.")
+                    ?: throw SecurityException("APK redirect is not on the trusted secure-download list.")
             } else {
                 if (response !in 200..299) {
                     connection.disconnect()
@@ -283,9 +380,13 @@ internal class InAppUpdater(
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(intent)
-            status.text = "Verified update handed to Android installer. Approve it to complete installation."
+            if (::status.isInitialized) {
+                status.text = localizeStatus("Verified update handed to Android installer. Approve it to complete installation.")
+            }
         } catch (error: Exception) {
-            status.text = "Could not open Android installer: ${error.message}"
+            if (::status.isInitialized) {
+                status.text = localizeStatus(UpdateErrorMessages.INSTALLER_FAILED)
+            }
         }
     }
 
@@ -294,7 +395,7 @@ internal class InAppUpdater(
         if (requested.protocol != "https" || requested.host != "api.github.com" ||
             requested.userInfo != null || requested.port !in setOf(-1, 443)
         ) {
-            throw SecurityException("Update metadata URL is not the official GitHub API host.")
+            throw SecurityException("Update service address is not trusted.")
         }
         val connection = (requested.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -310,7 +411,7 @@ internal class InAppUpdater(
                 throw IllegalStateException("No official app release has been published yet.")
             }
             if (response !in 200..299) {
-                throw IllegalStateException("GitHub API returned HTTP $response.")
+                throw IllegalStateException("Update service returned HTTP $response.")
             }
             val body = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream()
@@ -321,7 +422,7 @@ internal class InAppUpdater(
                     if (count < 0) break
                     total += count
                     if (total > 2 * 1024 * 1024) {
-                        throw IllegalStateException("GitHub release metadata exceeds the size limit.")
+                        throw IllegalStateException("Update metadata exceeds the size limit.")
                     }
                     output.write(buffer, 0, count)
                 }
@@ -340,7 +441,7 @@ internal class InAppUpdater(
         if (!::status.isInitialized || !::updateButton.isInitialized || !::progress.isInitialized) return
         updateButton.isEnabled = !busy
         progress.visibility = if (busy) View.VISIBLE else View.GONE
-        status.text = message
+        status.text = localizeStatus(message)
     }
 
     private companion object {

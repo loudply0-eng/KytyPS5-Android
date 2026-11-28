@@ -11,6 +11,24 @@ internal object UpdatePolicy {
         "release-assets.githubusercontent.com",
     )
 
+    const val AUTO_UPDATE_CHECK_INTERVAL_MILLIS = 12L * 60L * 60L * 1000L
+    const val AUTO_UPDATE_RETRY_INTERVAL_MILLIS = 30L * 60L * 1000L
+
+    /** Run on launch at most every 12 hours; after a failed attempt, retry no sooner than 30 minutes. */
+    fun shouldRunAutomaticCheck(
+        lastSuccessfulCheckAtMillis: Long,
+        lastAttemptAtMillis: Long,
+        nowMillis: Long,
+    ): Boolean {
+        if (lastSuccessfulCheckAtMillis > 0L && nowMillis >= lastSuccessfulCheckAtMillis &&
+            nowMillis - lastSuccessfulCheckAtMillis < AUTO_UPDATE_CHECK_INTERVAL_MILLIS
+        ) return false
+        if (lastAttemptAtMillis > 0L && nowMillis >= lastAttemptAtMillis &&
+            nowMillis - lastAttemptAtMillis < AUTO_UPDATE_RETRY_INTERVAL_MILLIS
+        ) return false
+        return true
+    }
+
     fun parseVersion(value: String): List<Int>? {
         val match = Regex("^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
             .matchEntire(value.trim()) ?: return null
@@ -39,4 +57,12 @@ internal object UpdatePolicy {
         val resolved = runCatching { URL(base, location) }.getOrNull() ?: return null
         return trustedDownloadUrl(resolved.toString())
     }
+}
+
+
+/** User-facing updater failures intentionally omit exception text, URLs, hosts and local paths. */
+internal object UpdateErrorMessages {
+    const val CHECK_FAILED = "Couldn't check for updates. Try again later."
+    const val DOWNLOAD_FAILED = "The update couldn't be downloaded or verified."
+    const val INSTALLER_FAILED = "Couldn't open the Android installer."
 }

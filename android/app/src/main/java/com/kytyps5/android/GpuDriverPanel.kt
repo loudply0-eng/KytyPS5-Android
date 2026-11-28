@@ -31,6 +31,7 @@ class GpuDriverPanel(
     val store = GpuDriverStore(activity.filesDir)
     private val current: TextView = label("")
     private var onDriversChanged: () -> Unit = {}
+    private fun tr(value: String): String = LauncherI18n.translate(value, settings.language)
 
     fun build(onChanged: () -> Unit): View {
         onDriversChanged = onChanged
@@ -39,45 +40,61 @@ class GpuDriverPanel(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(current, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(button("Change…") { chooseGlobal() })
-            addView(button("Download…") { openBrowser() })
-            addView(button("Import zip…") { openPicker() })
-            addView(button("Remove…") { chooseToRemove() })
+            addView(button(tr("Change…")) { chooseGlobal() })
+            addView(button(tr("Download…")) { openBrowser() })
+            addView(button(tr("Import zip…")) { openPicker() })
+            addView(button(tr("Remove…")) { chooseToRemove() })
         }
     }
 
     /** Driver directory for [gamePath] (per-game override, else global), or null for the system driver. */
-    fun driverDirFor(gamePath: String): String? =
-        GpuDriverChoice.resolve(settings.gpuDriverId, settings.gameGpuDriverOverride(gamePath)) {
-            store.find(it) != null
-        }?.let { store.find(it)?.directory?.absolutePath }
+    fun driverDirFor(gamePath: String): String? {
+        val override = settings.gameGpuDriverOverride(gamePath)
+        val selectedId = if (override == GameDriverPolicy.AUTO_DRIVER_ID) {
+            // EGL probing is performed during background startup, never on the launch/UI thread.
+            val detectedModel = if (adrenoProbed) adrenoModel else null
+            GameDriverPolicy.selectCompatible(detectedModel, store.list())?.id ?: settings.gpuDriverId
+        } else {
+            GpuDriverChoice.resolve(settings.gpuDriverId, override) { store.find(it) != null }
+        }
+        return selectedId?.takeIf { it != LauncherSettings.SYSTEM_DRIVER }
+            ?.let { store.find(it)?.directory?.absolutePath }
+    }
 
     /** Short label for a game row's driver button. */
     fun gameButtonText(gamePath: String): String {
-        val override = settings.gameGpuDriverOverride(gamePath) ?: return "Driver: global"
-        return "Driver: " + nameOf(override)
+        val override = settings.gameGpuDriverOverride(gamePath) ?: return tr("Driver: global")
+        return if (override == GameDriverPolicy.AUTO_DRIVER_ID) {
+            tr("Driver: Auto (GPU-compatible)")
+        } else {
+            tr("Driver: ") + nameOf(override)
+        }
     }
 
     /** Per-game override dialog: follow global, system driver, or one imported driver. */
     fun chooseForGame(game: GameEntry, onChosen: () -> Unit) {
         val drivers = store.list()
-        val labels = listOf("Use global (${nameOf(settings.gpuDriverId)})", SYSTEM_LABEL) + drivers.map { it.label }
-        val values = listOf<String?>(null, LauncherSettings.SYSTEM_DRIVER) + drivers.map { it.id }
+        val labels = listOf(
+            tr("Auto (GPU-compatible)"),
+            tr("Use global (") + nameOf(settings.gpuDriverId) + ")",
+            tr(SYSTEM_LABEL),
+        ) + drivers.map { it.label }
+        val values = listOf<String?>(GameDriverPolicy.AUTO_DRIVER_ID, null, LauncherSettings.SYSTEM_DRIVER) + drivers.map { it.id }
         val checked = values.indexOf(settings.gameGpuDriverOverride(game.path)).coerceAtLeast(0)
         AlertDialog.Builder(activity)
-            .setTitle("GPU driver for ${game.title}")
+            .setTitle(tr("GPU driver for ") + game.title)
             .setSingleChoiceItems(labels.toTypedArray(), checked) { dialog, which ->
                 settings.setGameGpuDriverOverride(game.path, values[which])
                 dialog.dismiss()
                 onChosen()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(tr("Cancel"), null)
             .show()
     }
 
     /** Import a package picked with ACTION_OPEN_DOCUMENT; called from onActivityResult. */
     fun onPicked(uri: Uri) {
-        showMessage("Importing driver…")
+        showMessage(tr("Importing driver…"))
         worker.execute {
             val result = try {
                 activity.contentResolver.openInputStream(uri)?.use(store::import)
@@ -91,7 +108,7 @@ class GpuDriverPanel(
                 when (result) {
                     is DriverImportResult.Imported -> {
                         settings.gpuDriverId = result.driver.id
-                        showMessage("Imported ${result.driver.label}; it is now the global GPU driver.")
+                        showMessage(tr("Imported ") + result.driver.label + tr("; it is now the global GPU driver."))
                     }
                     is DriverImportResult.Failure -> showMessage(result.message)
                 }
@@ -115,10 +132,13 @@ class GpuDriverPanel(
         return adrenoModel
     }
 
+    /** Warm the EGL/GPU probe from a worker thread before the user launches a game. */
+    fun warmUpAdrenoDetection(): Int? = detectAdreno()
+
     private fun openBrowser() {
         DriverBrowserDialog(activity, store, ::detectAdreno) { driver, useNow ->
             if (useNow) settings.gpuDriverId = driver.id
-            showMessage(if (useNow) "Installed ${driver.label}; it is now the global GPU driver." else "Installed ${driver.label}.")
+            showMessage(if (useNow) tr("Installed ") + driver.label + tr("; it is now the global GPU driver.") else tr("Installed ") + driver.label + ".")
             refresh()
             onDriversChanged()
         }.show()
@@ -126,41 +146,41 @@ class GpuDriverPanel(
 
     private fun chooseGlobal() {
         val drivers = store.list()
-        val labels = listOf(SYSTEM_LABEL) + drivers.map { it.label }
+        val labels = listOf(tr(SYSTEM_LABEL)) + drivers.map { it.label }
         val values = listOf(LauncherSettings.SYSTEM_DRIVER) + drivers.map { it.id }
         val checked = values.indexOf(settings.gpuDriverId).coerceAtLeast(0)
         AlertDialog.Builder(activity)
-            .setTitle("GPU driver")
+            .setTitle(tr("GPU driver"))
             .setSingleChoiceItems(labels.toTypedArray(), checked) { dialog, which ->
                 settings.gpuDriverId = values[which]
                 dialog.dismiss()
                 refresh()
                 onDriversChanged()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(tr("Cancel"), null)
             .show()
     }
 
     private fun chooseToRemove() {
         val drivers = store.list()
         if (drivers.isEmpty()) {
-            showMessage("No imported GPU drivers.")
+            showMessage(tr("No imported GPU drivers."))
             return
         }
         AlertDialog.Builder(activity)
-            .setTitle("Remove GPU driver")
+            .setTitle(tr("Remove GPU driver"))
             .setItems(drivers.map { it.label }.toTypedArray()) { _, which ->
                 val driver = drivers[which]
                 if (store.delete(driver.id)) {
                     if (settings.gpuDriverId == driver.id) settings.gpuDriverId = LauncherSettings.SYSTEM_DRIVER
-                    showMessage("Removed ${driver.label}.")
+                    showMessage(tr("Removed ") + driver.label + ".")
                 } else {
-                    showMessage("Could not remove ${driver.label}.")
+                    showMessage(tr("Could not remove ") + driver.label + ".")
                 }
                 refresh()
                 onDriversChanged()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(tr("Cancel"), null)
             .show()
     }
 
@@ -173,17 +193,20 @@ class GpuDriverPanel(
         try {
             activity.startActivityForResult(intent, REQUEST_PICK_DRIVER)
         } catch (e: ActivityNotFoundException) {
-            showMessage("No file picker is available on this device.")
+            showMessage(tr("No file picker is available on this device."))
         }
     }
 
     /** Re-reads the global choice, e.g. after the first-run default driver setup changed it. */
     fun refresh() {
-        current.text = "GPU driver: " + nameOf(settings.gpuDriverId)
+        current.text = tr("GPU driver: ") + nameOf(settings.gpuDriverId)
     }
 
-    private fun nameOf(id: String): String =
-        if (id == LauncherSettings.SYSTEM_DRIVER) SYSTEM_LABEL else store.find(id)?.label ?: "$SYSTEM_LABEL (missing: $id)"
+    private fun nameOf(id: String): String = when (id) {
+        GameDriverPolicy.AUTO_DRIVER_ID -> tr("Auto (GPU-compatible)")
+        LauncherSettings.SYSTEM_DRIVER -> tr(SYSTEM_LABEL)
+        else -> store.find(id)?.label ?: tr(SYSTEM_LABEL) + " (missing: $id)"
+    }
 
     private fun button(text: String, onClick: () -> Unit) = Button(activity).apply {
         this.text = text

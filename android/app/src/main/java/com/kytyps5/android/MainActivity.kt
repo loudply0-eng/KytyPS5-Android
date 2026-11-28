@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private val worker: ExecutorService = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var scanRequest = 0
+    private var lastLanguage = "en"
 
     private lateinit var nativeStatus: TextView
     private lateinit var storageStatus: TextView
@@ -59,6 +60,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = LauncherSettings(this)
+        lastLanguage = settings.language
         drivers = GpuDriverPanel(
             activity = this,
             settings = settings,
@@ -80,13 +82,14 @@ class MainActivity : Activity() {
         updater = InAppUpdater(this, savedInstanceState)
         setContentView(buildUi())
         applyDefaultGpuDriver()
-        updater.checkOnLaunch()
     }
 
     /** Installs the bundled Turnip on Adreno 8xx on first run (off the main thread: EGL probe + unzip). */
     private fun applyDefaultGpuDriver() {
         val setup = DefaultGpuDriverSetup(this, settings, drivers.store)
         worker.execute {
+            // Run EGL renderer detection on the worker before per-game Auto driver resolution is used.
+            drivers.warmUpAdrenoDetection()
             val changed = setup.apply() ?: return@execute
             mainHandler.post {
                 drivers.refresh()
@@ -97,7 +100,14 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (lastLanguage != settings.language) {
+            lastLanguage = settings.language
+            recreate()
+            return
+        }
+        applyAccentToButtons(window.decorView)
         updater.onResume()
+        updater.checkOnLaunch()
         refreshStorageState()
         if (Environment.isExternalStorageManager()) {
             ensureDefaultGamesFolder()
@@ -128,7 +138,7 @@ class MainActivity : Activity() {
         )
         storageStatus = label("")
         grantButton = Button(this).apply {
-            text = "Grant all-files access"
+            text = localize("Grant all-files access")
             setOnClickListener { openAllFilesAccessSettings() }
         }
         folderPath = label(settings.gamesRoot, sizeSp = 16f)
@@ -138,8 +148,14 @@ class MainActivity : Activity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            layoutDirection = if (LauncherI18n.isRtl(settings.language)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
             setPadding(16.dp, 16.dp, 16.dp, 16.dp)
-            addView(label("KytyPS5", sizeSp = 22f, bold = true))
+            addView(label("PS5 Game Hub", sizeSp = 22f, bold = true))
+            addView(Button(context).apply {
+                text = LauncherI18n.translate("Settings", settings.language)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(settings.accentColor)
+                setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
+            })
             addView(nativeStatus)
             addView(storageStatus)
             addView(grantButton)
@@ -150,11 +166,11 @@ class MainActivity : Activity() {
                     gravity = Gravity.CENTER_VERTICAL
                     addView(folderPath, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     addView(Button(context).apply {
-                        text = "Choose folder…"
+                        text = localize("Choose folder…")
                         setOnClickListener { openFolderPicker() }
                     })
                     addView(Button(context).apply {
-                        text = "Rescan"
+                        text = localize("Rescan")
                         setOnClickListener { onScanRequested() }
                     })
                 },
@@ -174,7 +190,6 @@ class MainActivity : Activity() {
             )
             addView(label("GPU driver", bold = true))
             addView(drivers.build(onChanged = {}))
-            addView(updater.buildPanel())
             addView(message)
             addView(
                 GridView(context).apply {
@@ -285,7 +300,7 @@ class MainActivity : Activity() {
         val request = ++scanRequest
         showMessage("Scanning $root ...")
         worker.execute {
-            val result = GameLibrary.scan(File(root))
+            val result = GameLibrary.scan(File(root), File(cacheDir, "pkg-icons"))
             mainHandler.post {
                 if (request == scanRequest && !isFinishing) renderScan(result)
             }
@@ -298,13 +313,17 @@ class MainActivity : Activity() {
             is ScanResult.Failure -> showMessage(result.message)
             is ScanResult.Found -> when {
                 result.games.isEmpty() ->
-                    showMessage("No games found here. Choose a folder containing game dumps (a folder with sce_sys/param.json, or a .zar or .exfat file).")
+                    showMessage("No supported games found. Discovery supports extracted sce_sys/param.json folders, .zar, .exfat, validated exFAT .img, and recognized PS5 .pkg metadata (not installable).")
                 else -> showMessage("${result.games.size} game(s) found. Tap to play, ⚙ or long-press for game settings.")
             }
         }
     }
 
     private fun launch(game: GameEntry) {
+        if (!game.launchable) {
+            showPkgDetails(game)
+            return
+        }
         val options = LaunchOptions.resolve(
             globalResolution = settings.resolution,
             globalHud = settings.hudEnabled,
@@ -326,8 +345,33 @@ class MainActivity : Activity() {
         )
     }
 
+    /** Inspect a recognized PKG off the UI thread; never send the PKG itself to the emulator. */
+    private fun showPkgDetails(game: GameEntry) {
+        if (!game.folder.isFile || !game.folder.extension.equals("pkg", ignoreCase = true)) {
+            showMessage(game.status ?: "This container is recognized but cannot be launched yet.")
+            return
+        }
+        showMessage("Reading package metadata…")
+        worker.execute {
+            val probe = com.kytyps5.android.library.PkgProbe.probe(game.folder)
+            val metadata = com.kytyps5.android.library.PkgProbe.readMetadata(game.folder)
+            val outerInspection = com.kytyps5.android.library.OuterPfsInspector.inspect(game.folder, probe)
+            mainHandler.post {
+                if (!isFinishing && !isDestroyed) {
+                    if (probe.kind == com.kytyps5.android.library.PkgProbeResult.Kind.PS5_FIH) {
+                        com.kytyps5.android.library.PkgInspectorDialog(this, settings).show(
+                            game, probe, metadata, outerInspection
+                        )
+                    } else {
+                        showMessage("The PKG file changed or failed validation. Rescan the games folder.")
+                    }
+                }
+            }
+        }
+    }
+
     private fun toggle(text: String, checked: Boolean, onChange: (Boolean) -> Unit) = CheckBox(this).apply {
-        this.text = text
+        this.text = localize(text)
         isChecked = checked
         setPadding(0, 0, 12.dp, 0)
         setOnCheckedChangeListener { _, value -> onChange(value) }
@@ -335,11 +379,11 @@ class MainActivity : Activity() {
 
     private fun refreshStorageState() {
         val granted = Environment.isExternalStorageManager()
-        storageStatus.text = if (granted) {
+        storageStatus.text = localize(if (granted) {
             "All-files access: granted"
         } else {
             "All-files access: not granted. Games live on shared storage, so the launcher needs it."
-        }
+        })
         grantButton.visibility = if (granted) View.GONE else View.VISIBLE
     }
 
@@ -355,8 +399,47 @@ class MainActivity : Activity() {
         }
     }
 
+
     private fun showMessage(text: String) {
-        message.text = text
+        message.text = localize(text)
+    }
+
+    private fun applyAccentToButtons(view: View) {
+        if (view is Button) {
+            view.backgroundTintList = android.content.res.ColorStateList.valueOf(settings.accentColor)
+        }
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) applyAccentToButtons(view.getChildAt(index))
+        }
+    }
+
+    private fun localize(value: String): String {
+        val language = settings.language
+        if (value.startsWith("Emulator library: missing")) {
+            val fileName = value.substringAfter("(").substringBefore(" is not in this build)")
+            return LauncherI18n.translate("Emulator library: missing", language) +
+                " (" + fileName + LauncherI18n.translate(" is not in this build)", language)
+        }
+        if (value.startsWith("Scanning ")) {
+            val path = value.removePrefix("Scanning ").removeSuffix(" ...")
+            return LauncherI18n.translate("Scanning", language) + " " + path + "..."
+        }
+        if (value.endsWith(" game(s) found. Tap to play, ⚙ or long-press for game settings.")) {
+            val count = value.substringBefore(" game(s)").toIntOrNull() ?: 0
+            return count.toString() + " " + LauncherI18n.translate(
+                "games found. Tap to play, ⚙ or long-press for game settings.",
+                language,
+            )
+        }
+        if (value.startsWith("Could not create ")) {
+            val remainder = value.removePrefix("Could not create ")
+            val path = remainder.substringBefore("; choose a games folder instead.")
+            val suffix = if (remainder.contains("; choose a games folder instead.")) {
+                LauncherI18n.translate("; choose a games folder instead.", language)
+            } else ""
+            return LauncherI18n.translate("Could not create ", language) + path + suffix
+        }
+        return LauncherI18n.translate(value, language)
     }
 
     private companion object {
@@ -370,7 +453,7 @@ class MainActivity : Activity() {
         bold: Boolean = false,
         secondary: Boolean = false,
     ): TextView = TextView(this).apply {
-        this.text = text
+        this.text = localize(text)
         textSize = sizeSp
         if (bold) setTypeface(typeface, Typeface.BOLD)
         if (secondary) alpha = 0.7f

@@ -247,6 +247,33 @@ void TestIsExfatImageFileForRawVolume(const TempDirectory& dir) {
 	Check(Common::IsExfatImageFile(raw), "raw exFAT boot sector is accepted");
 }
 
+void TestRejectsVolumeLengthBeyondImage(const TempDirectory& dir) {
+	auto truncated = ExfatFixture::BuildExfatVolume(SampleTree());
+	ExfatFixture::PutU64(truncated.data() + 72, UINT64_MAX);
+	const auto path = dir.File("truncated-volume.img");
+	WriteImage(path, truncated);
+	Check(Common::OpenExfatImage(path) == nullptr, "volume length beyond image is rejected");
+	Check(!Common::IsExfatImageFile(path), "truncated volume is not detected as exFAT");
+}
+
+void TestRejectsMalformedGptOffsets(const TempDirectory& dir) {
+	const auto volume = ExfatFixture::BuildExfatVolume(SampleTree());
+
+	auto bad_table = ExfatFixture::WrapInGpt(volume);
+	ExfatFixture::PutU64(bad_table.data() + ExfatFixture::SectorBytes + 72, UINT64_MAX);
+	const auto table_path = dir.File("gpt-overflow-table.img");
+	WriteImage(table_path, bad_table);
+	Check(Common::OpenExfatImage(table_path) == nullptr, "GPT entry-array LBA overflow is rejected");
+	Check(!Common::IsExfatImageFile(table_path), "GPT entry-array LBA overflow is not detected as exFAT");
+
+	auto bad_partition = ExfatFixture::WrapInGpt(volume);
+	ExfatFixture::PutU64(bad_partition.data() + 2 * ExfatFixture::SectorBytes + 32, UINT64_MAX);
+	const auto partition_path = dir.File("gpt-overflow-partition.img");
+	WriteImage(partition_path, bad_partition);
+	Check(Common::OpenExfatImage(partition_path) == nullptr, "GPT partition-start LBA overflow is rejected");
+	Check(!Common::IsExfatImageFile(partition_path), "GPT partition-start LBA overflow is not detected as exFAT");
+}
+
 } // namespace
 
 int main() {
@@ -261,6 +288,8 @@ int main() {
 	TestGptPartitionedImage(dir);
 	TestRejectsNonExfatImages(dir);
 	TestIsExfatImageFileForRawVolume(dir);
+	TestRejectsVolumeLengthBeyondImage(dir);
+	TestRejectsMalformedGptOffsets(dir);
 	std::printf("ExfatImageTests: all passed\n");
 	return 0;
 }

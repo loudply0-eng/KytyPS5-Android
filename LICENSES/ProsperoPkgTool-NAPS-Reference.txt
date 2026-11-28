@@ -1,0 +1,13 @@
+Reference notice
+================
+
+The NAPS 9-byte CblockInfo bit positions and sparse-page restoration invariants in
+NapsLayoutTables.kt and NapsLogicalBlockMap.kt were cross-checked against the public
+format analysis in pearlxcore/ProsperoPkgTool:
+
+https://github.com/pearlxcore/ProsperoPkgTool
+
+That project declares the MIT License (Copyright (c) 2026 pearlxcore).
+No source code from that project is included in this implementation; the Kotlin
+reader is independently expressed. This notice records the technical reference
+used for the bit-field interpretation.
