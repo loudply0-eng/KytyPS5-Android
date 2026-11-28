@@ -49,6 +49,8 @@ object PkgProbe {
     private const val REQUIRED_PFS_OFFSET = 0x10000L
     private const val PFS_BLOCK_SIZE = 0x10000L
     private const val CNT_HEADER_MIN_SIZE = 0x5A0L
+    private const val OUTER_PFS_SEED_OFFSET = 0x370L
+    private val OUTER_PFS_NO_AUTH_SEED = "PPRPLAIN-NOAUTH!".toByteArray(Charsets.US_ASCII)
 
     fun probe(file: File): PkgProbeResult {
         if (!file.isFile || file.length() < MAGIC_SIZE) {
@@ -104,7 +106,9 @@ object PkgProbe {
         // The FIH variant byte is not a PFS mode flag. Probe a readable Debug
         // superblock only; leave Retail PFS encryption unknown in this metadata-only stage.
         val superblockLocation = if (fihSignedByte == 0x00) {
-            PfsSuperblockReader.find(raf, pfsOffset, pfsSize) ?: return malformed()
+            PfsSuperblockReader.find(raf, pfsOffset, pfsSize) { candidateOffset, _ ->
+                hasPlainNoAuthOuterSeed(raf, candidateOffset, pfsOffset, pfsSize, fileSize)
+            }
         } else {
             null
         }
@@ -125,6 +129,29 @@ object PkgProbe {
         }
 
         return PkgProbeResult(PkgProbeResult.Kind.PS5_FIH, cntOffset, cntSize, fihSignedByte, pfsSize, pfsSuperblockOffset, pfsSuperblock)
+    }
+
+    private fun hasPlainNoAuthOuterSeed(
+        raf: RandomAccessFile,
+        candidateOffset: Long,
+        pfsOffset: Long,
+        pfsSize: Long,
+        fileSize: Long,
+    ): Boolean {
+        if (candidateOffset < pfsOffset || pfsSize < OUTER_PFS_SEED_OFFSET + OUTER_PFS_NO_AUTH_SEED.size) {
+            return false
+        }
+        val relative = candidateOffset - pfsOffset
+        if (relative < 0L || relative > pfsSize - OUTER_PFS_SEED_OFFSET - OUTER_PFS_NO_AUTH_SEED.size) {
+            return false
+        }
+        if (candidateOffset > Long.MAX_VALUE - OUTER_PFS_SEED_OFFSET) return false
+        val seedOffset = candidateOffset + OUTER_PFS_SEED_OFFSET
+        if (!rangeFits(seedOffset, OUTER_PFS_NO_AUTH_SEED.size.toLong(), fileSize)) return false
+        val seed = ByteArray(OUTER_PFS_NO_AUTH_SEED.size)
+        raf.seek(seedOffset)
+        raf.readFully(seed)
+        return seed.contentEquals(OUTER_PFS_NO_AUTH_SEED)
     }
 
     private fun malformed() =

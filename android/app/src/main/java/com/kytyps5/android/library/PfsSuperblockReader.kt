@@ -43,7 +43,12 @@ object PfsSuperblockReader {
      * at the first byte of the segment. Only the small magic field is probed per block;
      * full geometry validation is performed only for matching candidates.
      */
-    fun find(raf: RandomAccessFile, offset: Long, segmentSize: Long): Pair<Long, PfsSuperblockInfo>? {
+    fun find(
+        raf: RandomAccessFile,
+        offset: Long,
+        segmentSize: Long,
+        acceptCandidate: (absoluteOffset: Long, info: PfsSuperblockInfo) -> Boolean = { _, _ -> true },
+    ): Pair<Long, PfsSuperblockInfo>? {
         val fileSize = try { raf.length() } catch (_: IOException) { return null }
         if (offset < 0L || segmentSize < HEADER_SIZE || offset > fileSize ||
             segmentSize > fileSize - offset
@@ -56,7 +61,7 @@ object PfsSuperblockReader {
                 raf.seek(absolute + 0x08L)
                 if (readLe64(raf) == SUPERBLOCK_MAGIC) {
                     val info = read(raf, absolute, segmentSize - relative)
-                    if (info != null) return absolute to info
+                    if (info != null && acceptCandidate(absolute, info)) return absolute to info
                 }
             } catch (_: IOException) {
                 return null

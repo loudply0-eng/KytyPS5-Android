@@ -355,6 +355,12 @@ class NapsLogicalBlockMapTest {
         assertArrayEquals(ByteArray(0), map.readLogicalRange(map.logicalSize, 0) { _, _ -> null })
     }
 
+    internal fun singlePageStoredLayoutFixture(): ByteArray = fixture(
+        logicalLengths = listOf(0x20000, 0x20000),
+        storage = listOf(Storage.STORED, Storage.STORED),
+        fileStarts = listOf(0L),
+    )
+
     private enum class Storage { STORED, KRAKEN, ZERO_HOLE, ALIAS }
 
     /**

@@ -64,12 +64,27 @@ class PkgProbeTest {
             putLe64(raf, 0x20038L, 1L)
             putLe64(raf, 0x20040L, 1L)
             putLe64(raf, 0x20048L, 0L)
+            raf.seek(0x20000L + 0x370L)
+            raf.write("PPRPLAIN-NOAUTH!".toByteArray(Charsets.US_ASCII))
         }
 
         val result = PkgProbe.probe(file)
         assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
         assertEquals(0x20000L, result.pfsSuperblockOffset)
         assertEquals(0x10000L, result.pfsSuperblock?.blockSize)
+    }
+
+    @Test
+    fun keepsFihRecognizedWhenNoSupportedNoAuthOuterSuperblockIsFound() {
+        val file = writeFih(
+            "no-outer-seed.pkg", 0x10000L, 0x10000L, 0x20000L, 0x5A0L,
+            includeNoAuthSeed = false,
+        )
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(null, result.pfsSuperblockOffset)
+        assertEquals(null, result.pfsSuperblock)
+        assertEquals(null, result.pfsEncrypted)
     }
 
     @Test
@@ -121,7 +136,9 @@ class PkgProbeTest {
             raf.seek(0x10000L + 0x20L)
             raf.write(byteArrayOf(0x00.toByte(), 0x80.toByte(), 0x01.toByte(), 0x00.toByte())) // 0x18000, not a power of two.
         }
-        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(null, result.pfsSuperblock)
     }
 
     @Test
@@ -131,7 +148,9 @@ class PkgProbeTest {
             raf.seek(0x10000L + 0x48L)
             raf.write(ByteArray(8) { if (it == 0) 1 else 0 })
         }
-        assertEquals(PkgProbeResult.Kind.MALFORMED_PS5_PKG, PkgProbe.probe(file).kind)
+        val result = PkgProbe.probe(file)
+        assertEquals(PkgProbeResult.Kind.PS5_FIH, result.kind)
+        assertEquals(null, result.pfsSuperblock)
     }
 
     @Test
@@ -254,6 +273,7 @@ class PkgProbeTest {
         fileSizeOverride: Int? = null,
         signedByte: Int = 0x00,
         pfsMode: Int = 0x0008,
+        includeNoAuthSeed: Boolean = true,
     ): File {
         val fileSize = fileSizeOverride ?: (cntOffset + cntSize).coerceAtLeast(0x10000L).toInt()
         val bytes = ByteArray(fileSize)
@@ -274,6 +294,13 @@ class PkgProbeTest {
             putLe64(bytes, pfsOffset.toInt() + 0x38, 8L)
             putLe64(bytes, pfsOffset.toInt() + 0x40, 1L)
             putLe64(bytes, pfsOffset.toInt() + 0x48, 0L)
+            if (includeNoAuthSeed && signedByte == 0x00 &&
+                pfsOffset <= Int.MAX_VALUE.toLong() - 0x370L - 16L
+            ) {
+                "PPRPLAIN-NOAUTH!".toByteArray(Charsets.US_ASCII).copyInto(
+                    bytes, pfsOffset.toInt() + 0x370,
+                )
+            }
         }
         if (cntOffset >= 0 && cntOffset + 4 <= bytes.size.toLong()) {
             putMagicAt(bytes, cntOffset.toInt(), cntMagic)
