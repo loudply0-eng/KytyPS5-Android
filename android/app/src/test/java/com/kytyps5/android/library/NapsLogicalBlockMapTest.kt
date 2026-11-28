@@ -1,6 +1,7 @@
 package com.kytyps5.android.library
 
-import org.junit.Assert.assertArrayEquals\nimport org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
