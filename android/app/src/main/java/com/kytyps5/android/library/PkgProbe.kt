@@ -26,8 +26,8 @@ data class PkgProbeResult(
     val pfsSuperblock: PfsSuperblockInfo? = null,
 ) {
     /**
-     * Outer-PFS encryption state. Retail FIH (0x80) encrypts the complete outer image.
-     * For Debug FIH, use the readable PFS mode bit when its superblock is valid.
+     * Whether the outer-PFS payload is encrypted. Retail/submitted FIH is treated as encrypted;
+     * Debug FIH reports the PFS mode bit only when a valid plaintext superblock was found.
      */
     val pfsEncrypted: Boolean? get() = when (fihSignedByte) {
         0x80 -> true
