@@ -194,10 +194,11 @@ data class NapsLogicalBlockMap(
                     (packedCursor > packedImageSize || compressedLength.toLong() > packedImageSize - packedCursor)
                 ) return null
 
-                val codecFlags = ((even and 0x04) shl 1) or ((even and 0x02) ushr 1) or
-                    (if (logicalLength > CHUNK_SIZE) {
-                        ((odd and 0x04) shl 3) or ((odd and 0x02) shl 3)
-                    } else 0)
+                val codecFlags =
+                    (if ((even and 0x04) != 0) 0x02 else 0) or
+                    (if ((even and 0x02) != 0) 0x01 else 0) or
+                    (if (logicalLength > CHUNK_SIZE && (odd and 0x04) != 0) 0x20 else 0) or
+                    (if (logicalLength > CHUNK_SIZE && (odd and 0x02) != 0) 0x10 else 0)
 
                 blocks += NapsLogicalBlock(
                     sourceOffset = packedCursor,
